@@ -9,39 +9,24 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.9.1/dist/nipplejs.min.js"></script>
 
     <style>
         :root { --primary: #00f2ff; --bg: #000810; }
         body { margin: 0; overflow: hidden; background: var(--bg); touch-action: none; font-family: 'JetBrains Mono', monospace; }
-        
-        #loading-screen { 
-            position: fixed; inset: 0; background: radial-gradient(circle at center, #001a33 0%, #000 100%); 
-            display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 10000; 
-        }
+        #loading-screen { position: fixed; inset: 0; background: radial-gradient(circle at center, #001a33 0%, #000 100%); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 10000; }
         .scanline { width: 100%; height: 100%; position: absolute; background: linear-gradient(to bottom, rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06)); background-size: 100% 2px, 3px 100%; pointer-events: none; }
         .loading-text { font-size: 2rem; color: var(--primary); text-shadow: 0 0 10px var(--primary); margin-bottom: 10px; font-weight: bold; }
         .bar-container { width: 300px; height: 4px; background: rgba(255,255,255,0.05); border-radius: 2px; position: relative; overflow: hidden; border: 1px solid rgba(0, 242, 255, 0.2); }
         #progress-fill { position: absolute; left: 0; top: 0; height: 100%; background: var(--primary); box-shadow: 0 0 15px var(--primary); transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
-        
         #game-hud { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 1s; }
         #joystick-zone { position: absolute; bottom: 40px; left: 40px; width: 140px; height: 140px; pointer-events: auto; }
-        #jump-btn { 
-            position: absolute; bottom: 60px; right: 50px; width: 80px; height: 80px; 
-            background: rgba(0, 242, 255, 0.1); border: 2px solid var(--primary); border-radius: 50%; 
-            pointer-events: auto; color: white; display: flex; align-items: center; justify-content: center; 
-            font-weight: bold; backdrop-filter: blur(5px); box-shadow: 0 0 20px rgba(0, 242, 255, 0.2);
-        }
+        #jump-btn { position: absolute; bottom: 60px; right: 50px; width: 80px; height: 80px; background: rgba(0, 242, 255, 0.1); border: 2px solid var(--primary); border-radius: 50%; pointer-events: auto; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; backdrop-filter: blur(5px); box-shadow: 0 0 20px rgba(0, 242, 255, 0.2); }
         .stats-overlay { position: absolute; top: 20px; right: 20px; color: var(--primary); font-size: 10px; text-align: right; pointer-events: none; }
         .exit-btn { position: absolute; top: 20px; left: 20px; pointer-events: auto; background: none; border: 1px solid red; color: red; padding: 5px 15px; cursor: pointer; border-radius: 3px; }
-        .exit-btn:hover { background: red; color: white; }
-
-        /* Estilo da Notificação de Tixs */
-        @keyframes slideDown {
-            from { transform: translateX(-50%) translateY(-50px); opacity: 0; }
-            to { transform: translateX(-50%) translateY(0); opacity: 1; }
-        }
+        @keyframes slideDown { from { transform: translateX(-50%) translateY(-50px); opacity: 0; } to { transform: translateX(-50%) translateY(0); opacity: 1; } }
     </style>
 </head>
 <body>
@@ -71,145 +56,117 @@
                 appId: "1:324340380415:web:468fcca5188b539682d2ca"
             },
             physics: { gravity: -35, jumpForce: 16, walkSpeed: 13, lerpFactor: 0.18 },
-            network: { tickRate: 120, cleanupInterval: 10000 },
-            economy: { rewardInterval: 30000 } // 30 segundos
+            network: { tickRate: 120 },
+            economy: { rewardInterval: 30000 }
         };
 
         class AuroraEngine {
             constructor() {
-                this.scene = null;
-                this.camera = null;
-                this.renderer = null;
-                this.world = null;
-                this.clock = new THREE.Clock();
+                this.scene = null; this.camera = null; this.renderer = null; this.world = null;
                 this.player = { body: null, mesh: null, id: null, username: "Guest" };
                 this.entities = new Map();
                 this.input = { x: 0, z: 0 };
+                this.camRotation = { theta: 0, phi: 0.6 }; 
+                this.camDistance = 18;
+                this.touchStart = { x: 0, y: 0 };
             }
 
             async init() {
                 try {
-                    this.updateProgress(10, "FIREBASE_HANDSHAKE");
+                    this.updateProgress(10, "FIREBASE_SYNC");
                     if (!firebase.apps.length) firebase.initializeApp(Config.firebase);
                     const user = await this.getAuth();
                     this.player.id = user.uid;
 
-                    this.updateProgress(30, "FETCHING_REMOTE_ASSETS");
                     const doc = await firebase.firestore().collection("users").doc(this.player.id).get();
                     this.player.data = doc.exists ? doc.data() : { avatar: {}, username: "Player" };
                     this.player.username = this.player.data.username || "Player";
 
-                    this.updateProgress(50, "GPU_GEOMETRY_INIT");
                     this.setupGraphics();
                     this.setupPhysics();
-
-                    this.updateProgress(70, "ECONOMY_KERNEL_START");
-                    this.setupRewardSystem(); // INICIA O GANHO DE TIXS
-
-                    this.updateProgress(85, "NETWORK_LISTENER_START");
+                    this.loadMap();
+                    this.setupRewardSystem();
                     this.setupNetwork();
                     this.setupControls();
 
-                    this.updateProgress(100, "ENGINE_STABLE");
+                    this.updateProgress(100, "SYSTEM_ONLINE");
                     this.startLoop();
-                } catch (e) {
-                    console.error("CRITICAL_BOOT_FAILURE", e);
-                }
+                } catch (e) { console.error(e); }
             }
 
-            // --- SISTEMA DE RECOMPENSA (NOVA FUNÇÃO) ---
-            setupRewardSystem() {
-                setInterval(async () => {
-                    if (!this.player.id) return;
-                    const userRef = firebase.firestore().collection("users").doc(this.player.id);
-
-                    try {
-                        await firebase.firestore().runTransaction(async (transaction) => {
-                            const userDoc = await transaction.get(userRef);
-                            if (!userDoc.exists) return;
-
-                            const newTixCount = (userDoc.data().tixs || 0) + 1;
-                            transaction.update(userRef, { tixs: newTixCount });
-                            
-                            this.showNotification(`+1 TIX RECEBIDO!`);
-                        });
-                    } catch (err) {
-                        console.warn("Erro ao processar Tix:", err);
-                    }
-                }, Config.economy.rewardInterval);
-            }
-
-            showNotification(msg) {
-                const notify = document.createElement('div');
-                notify.style.cssText = `
-                    position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
-                    background: rgba(0, 242, 255, 0.2); color: #00f2ff; 
-                    padding: 12px 30px; border-radius: 20px; border: 1px solid #00f2ff;
-                    font-family: 'JetBrains Mono', monospace; font-weight: bold;
-                    backdrop-filter: blur(10px); z-index: 10000; pointer-events: none;
-                    box-shadow: 0 0 20px rgba(0, 242, 255, 0.4); animation: slideDown 0.5s ease-out;
-                `;
-                notify.innerText = msg;
-                document.body.appendChild(notify);
-                setTimeout(() => {
-                    notify.style.transition = "opacity 1s";
-                    notify.style.opacity = "0";
-                    setTimeout(() => notify.remove(), 1000);
-                }, 3000);
-            }
-
-            getAuth() {
-                return new Promise((res) => {
-                    firebase.auth().onAuthStateChanged(u => u ? res(u) : window.location.href='index.html');
+            loadMap() {
+                const loader = new THREE.GLTFLoader();
+                // Ajustado para o caminho relativo correto conforme suas imagens
+                loader.load('assets/crossroads.glb', (gltf) => {
+                    const model = gltf.scene;
+                    
+                    // Escala aumentada e posição ajustada para ficar sob os pés (Y = -1.6)
+                    model.scale.set(2, 2, 2); 
+                    model.position.set(0, -1.6, 0); 
+                    
+                    model.traverse(n => {
+                        if (n.isMesh) {
+                            n.castShadow = true;
+                            n.receiveShadow = true;
+                            if(n.material) n.material.metalness = 0.1;
+                        }
+                    });
+                    
+                    this.scene.add(model);
+                    console.log("Mapa Crossroads carregado abaixo dos players!");
+                }, (xhr) => {
+                    let p = Math.round((xhr.loaded / xhr.total) * 100);
+                    this.updateProgress(85 + (p/10), "GEOMETRY_SYNC_" + p + "%");
+                }, (err) => {
+                    console.error("Erro ao carregar o mapa. Verifique o nome do arquivo.", err);
                 });
-            }
-
-            updateProgress(v, t) {
-                document.getElementById('progress-fill').style.width = v + "%";
-                document.getElementById('percent-num').innerText = v + "%";
-                document.getElementById('status-text').innerText = t;
-                if(v >= 100) {
-                    setTimeout(() => {
-                        document.getElementById('loading-screen').style.opacity = "0";
-                        setTimeout(() => document.getElementById('loading-screen').style.display = "none", 1000);
-                        document.getElementById('game-hud').style.opacity = "1";
-                    }, 1000);
-                }
             }
 
             setupGraphics() {
                 this.scene = new THREE.Scene();
                 this.scene.background = new THREE.Color(0x000205);
-                this.scene.fog = new THREE.Fog(0x000205, 10, 100);
+                this.scene.fog = new THREE.Fog(0x000205, 30, 150);
                 this.camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-                this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+                
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
                 this.renderer.setSize(window.innerWidth, window.innerHeight);
-                this.renderer.shadowMap.enabled = true;
+                this.renderer.outputEncoding = THREE.sRGBEncoding;
                 document.body.appendChild(this.renderer.domElement);
 
-                this.scene.add(new THREE.AmbientLight(0x404040, 0.5));
-                const sun = new THREE.DirectionalLight(0xffffff, 1);
+                // Iluminação aprimorada
+                this.scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+                this.scene.add(new THREE.HemisphereLight(0x00f2ff, 0x000000, 0.5));
+                
+                const sun = new THREE.DirectionalLight(0xffffff, 1.0);
                 sun.position.set(20, 50, 20);
-                sun.castShadow = true;
                 this.scene.add(sun);
 
-                const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshPhongMaterial({ color: 0x111111 }));
-                ground.rotation.x = -Math.PI/2;
-                ground.receiveShadow = true;
-                this.scene.add(ground);
-                this.scene.add(new THREE.GridHelper(200, 50, 0x00f2ff, 0x001122));
+                // Grid posicionado no mesmo nível do chão do mapa
+                const grid = new THREE.GridHelper(400, 80, 0x00f2ff, 0x111111);
+                grid.position.y = -1.6;
+                this.scene.add(grid);
             }
 
             setupPhysics() {
                 this.world = new CANNON.World();
                 this.world.gravity.set(0, Config.physics.gravity, 0);
+                
+                // Chão físico invisível
                 const groundBody = new CANNON.Body({ mass: 0 });
                 groundBody.addShape(new CANNON.Plane());
                 groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1,0,0), -Math.PI/2);
+                groundBody.position.y = -1.6; 
                 this.world.addBody(groundBody);
 
-                this.player.body = new CANNON.Body({ mass: 1.5, shape: new CANNON.Box(new CANNON.Vec3(0.5, 1.5, 0.4)), position: new CANNON.Vec3(0, 5, 0), fixedRotation: true });
+                // Spawn do player um pouco acima do chão
+                this.player.body = new CANNON.Body({ 
+                    mass: 1.5, 
+                    shape: new CANNON.Box(new CANNON.Vec3(0.5, 1.5, 0.4)), 
+                    position: new CANNON.Vec3(0, 5, 0), 
+                    fixedRotation: true 
+                });
                 this.world.addBody(this.player.body);
+                
                 this.player.mesh = this.createR6Model(this.player.data.avatar, this.player.username);
                 this.scene.add(this.player.mesh);
             }
@@ -217,66 +174,48 @@
             createR6Model(colors = {}, name) {
                 const group = new THREE.Group();
                 const parts = {};
-                const matConf = (c) => new THREE.MeshPhongMaterial({ color: c || 0x00f2ff });
+                const mat = (c) => new THREE.MeshPhongMaterial({ color: c || 0x00f2ff });
                 const add = (w,h,d, x,y,z, id) => {
-                    const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), matConf(colors[id]));
-                    m.position.set(x,y,z);
-                    m.castShadow = true;
-                    group.add(m);
-                    parts[id] = m;
+                    const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat(colors[id]));
+                    m.position.set(x,y,z); group.add(m); parts[id] = m;
                 };
-                add(0.6, 0.6, 0.6, 0, 1.3, 0, 'body-head');
-                add(0.9, 1.2, 0.5, 0, 0.4, 0, 'body-torso');
-                add(0.4, 1.1, 0.4, -0.7, 0.4, 0, 'body-larm');
-                add(0.4, 1.1, 0.4, 0.7, 0.4, 0, 'body-rarm');
-                add(0.45, 1.1, 0.45, -0.25, -0.8, 0, 'body-lleg');
-                add(0.45, 1.1, 0.45, 0.25, -0.8, 0, 'body-rleg');
+                add(0.6,0.6,0.6, 0,1.3,0, 'body-head');
+                add(0.9,1.2,0.5, 0,0.4,0, 'body-torso');
+                add(0.4,1.1,0.4, -0.7,0.4,0, 'body-larm');
+                add(0.4,1.1,0.4, 0.7,0.4,0, 'body-rarm');
+                add(0.45,1.1,0.45, -0.25,-0.8,0, 'body-lleg');
+                add(0.45,1.1,0.45, 0.25,-0.8,0, 'body-rleg');
                 group.userData.parts = parts;
                 return group;
-            }
-
-            setupNetwork() {
-                const col = firebase.firestore().collection("online_players");
-                col.doc(this.player.id).set({ name: this.player.username, avatar: this.player.data.avatar || {}, x: 0, y: 5, z: 0, ry: 0, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
-                col.onSnapshot(snap => {
-                    snap.docChanges().forEach(change => {
-                        const id = change.doc.id;
-                        const data = change.doc.data();
-                        if(id === this.player.id) return;
-                        if(change.type === "added") {
-                            const ent = this.createR6Model(data.avatar, data.name);
-                            ent.userData.targetPos = new THREE.Vector3(data.x, data.y, data.z);
-                            ent.userData.targetRot = data.ry;
-                            this.scene.add(ent);
-                            this.entities.set(id, ent);
-                        }
-                        if(change.type === "modified") {
-                            const ent = this.entities.get(id);
-                            if(ent) { ent.userData.targetPos.set(data.x, data.y, data.z); ent.userData.targetRot = data.ry; }
-                        }
-                        if(change.type === "removed") {
-                            const ent = this.entities.get(id);
-                            if(ent) { this.scene.remove(ent); this.entities.delete(id); }
-                        }
-                    });
-                    document.getElementById('network-stats').innerText = `PLAYERS: ${this.entities.size + 1}`;
-                });
-                setInterval(() => {
-                    col.doc(this.player.id).update({ x: this.player.body.position.x, y: this.player.body.position.y, z: this.player.body.position.z, ry: this.player.mesh.rotation.y, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
-                }, Config.network.tickRate);
             }
 
             setupControls() {
                 const joy = nipplejs.create({ zone: document.getElementById('joystick-zone'), mode: 'static', position: {left: '70px', bottom: '70px'}, color: '#00f2ff' });
                 joy.on('move', (e, d) => {
+                    const moveAngle = d.angle.radian + this.camRotation.theta;
                     const power = d.distance / 50;
-                    this.input.x = Math.cos(d.angle.radian) * Config.physics.walkSpeed * power;
-                    this.input.z = -Math.sin(d.angle.radian) * Config.physics.walkSpeed * power;
+                    this.input.x = Math.cos(moveAngle) * Config.physics.walkSpeed * power;
+                    this.input.z = -Math.sin(moveAngle) * Config.physics.walkSpeed * power;
                 });
                 joy.on('end', () => { this.input.x = 0; this.input.z = 0; });
+
                 document.getElementById('jump-btn').addEventListener('touchstart', (e) => {
                     e.preventDefault();
                     if(Math.abs(this.player.body.velocity.y) < 0.5) this.player.body.velocity.y = Config.physics.jumpForce;
+                });
+
+                window.addEventListener('touchstart', (e) => {
+                    if (e.target.closest('#joystick-zone') || e.target.closest('#jump-btn')) return;
+                    this.touchStart.x = e.touches[0].pageX; this.touchStart.y = e.touches[0].pageY;
+                });
+                window.addEventListener('touchmove', (e) => {
+                    if (e.target.closest('#joystick-zone') || e.target.closest('#jump-btn')) return;
+                    const dx = e.touches[0].pageX - this.touchStart.x;
+                    const dy = e.touches[0].pageY - this.touchStart.y;
+                    this.camRotation.theta -= dx * 0.008;
+                    this.camRotation.phi += dy * 0.008;
+                    this.camRotation.phi = Math.max(0.1, Math.min(Math.PI / 2.2, this.camRotation.phi));
+                    this.touchStart.x = e.touches[0].pageX; this.touchStart.y = e.touches[0].pageY;
                 });
             }
 
@@ -285,23 +224,29 @@
                     requestAnimationFrame(animate);
                     this.world.step(1/60);
                     this.player.mesh.position.copy(this.player.body.position);
+
+                    const cx = this.player.mesh.position.x + this.camDistance * Math.sin(this.camRotation.theta) * Math.cos(this.camRotation.phi);
+                    const cy = this.player.mesh.position.y + this.camDistance * Math.sin(this.camRotation.phi);
+                    const cz = this.player.mesh.position.z + this.camDistance * Math.cos(this.camRotation.theta) * Math.cos(this.camRotation.phi);
+                    this.camera.position.set(cx, cy, cz);
+                    this.camera.lookAt(this.player.mesh.position.x, this.player.mesh.position.y + 1, this.player.mesh.position.z);
+
                     if(Math.abs(this.input.x) > 0.1 || Math.abs(this.input.z) > 0.1) {
                         this.player.body.velocity.x = this.input.x;
                         this.player.body.velocity.z = this.input.z;
-                        this.player.mesh.rotation.y = this.lerpAngle(this.player.mesh.rotation.y, Math.atan2(this.input.x, this.input.z), Config.physics.lerpFactor);
+                        this.player.mesh.rotation.y = this.lerpAngle(this.player.mesh.rotation.y, Math.atan2(this.input.x, this.input.z), 0.2);
                         this.animateWalking(this.player.mesh, true);
                     } else {
-                        this.player.body.velocity.x *= 0.85; this.player.body.velocity.z *= 0.85;
+                        this.player.body.velocity.x *= 0.8; this.player.body.velocity.z *= 0.8;
                         this.animateWalking(this.player.mesh, false);
                     }
+
                     this.entities.forEach(ent => {
-                        ent.position.lerp(ent.userData.targetPos, 0.15);
-                        ent.rotation.y = this.lerpAngle(ent.rotation.y, ent.userData.targetRot, 0.15);
+                        ent.position.lerp(ent.userData.targetPos, 0.1);
+                        ent.rotation.y = this.lerpAngle(ent.rotation.y, ent.userData.targetRot, 0.1);
                         this.animateWalking(ent, ent.position.distanceTo(ent.userData.targetPos) > 0.1);
                     });
-                    const camOff = new THREE.Vector3(0, 8, 14);
-                    this.camera.position.lerp(this.player.mesh.position.clone().add(camOff), 0.1);
-                    this.camera.lookAt(this.player.mesh.position);
+
                     this.renderer.render(this.scene, this.camera);
                 };
                 animate();
@@ -318,24 +263,80 @@
                 const t = Date.now() * 0.012;
                 const p = mesh.userData.parts;
                 if(active) {
-                    p['body-lleg'].rotation.x = Math.sin(t) * 0.7; p['body-rleg'].rotation.x = -Math.sin(t) * 0.7;
-                    p['body-larm'].rotation.x = -Math.sin(t) * 0.5; p['body-rarm'].rotation.x = Math.sin(t) * 0.5;
+                    p['body-lleg'].rotation.x = Math.sin(t)*0.7; p['body-rleg'].rotation.x = -Math.sin(t)*0.7;
+                    p['body-larm'].rotation.x = -Math.sin(t)*0.5; p['body-rarm'].rotation.x = Math.sin(t)*0.5;
                 } else {
                     Object.values(p).forEach(part => part.rotation.x = THREE.MathUtils.lerp(part.rotation.x, 0, 0.1));
                 }
             }
+
+            setupNetwork() {
+                const col = firebase.firestore().collection("online_players");
+                col.doc(this.player.id).set({ name: this.player.username, avatar: this.player.data.avatar || {}, x: 0, y: 5, z: 0, ry: 0, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                col.onSnapshot(snap => {
+                    snap.docChanges().forEach(change => {
+                        const id = change.doc.id; if(id === this.player.id) return;
+                        const data = change.doc.data();
+                        if(change.type === "added") {
+                            const ent = this.createR6Model(data.avatar, data.name);
+                            ent.userData.targetPos = new THREE.Vector3(data.x, data.y, data.z);
+                            ent.userData.targetRot = data.ry;
+                            this.scene.add(ent); this.entities.set(id, ent);
+                        }
+                        if(change.type === "modified") {
+                            const ent = this.entities.get(id);
+                            if(ent) { ent.userData.targetPos.set(data.x, data.y, data.z); ent.userData.targetRot = data.ry; }
+                        }
+                        if(change.type === "removed") {
+                            const ent = this.entities.get(id);
+                            if(ent) { this.scene.remove(ent); this.entities.delete(id); }
+                        }
+                    });
+                    document.getElementById('network-stats').innerText = `PLAYERS: ${this.entities.size + 1}`;
+                });
+                setInterval(() => {
+                    col.doc(this.player.id).update({ x: this.player.body.position.x, y: this.player.body.position.y, z: this.player.body.position.z, ry: this.player.mesh.rotation.y, lastSeen: firebase.firestore.FieldValue.serverTimestamp() });
+                }, Config.network.tickRate);
+            }
+
+            setupRewardSystem() {
+                setInterval(async () => {
+                    if (!this.player.id) return;
+                    const ref = firebase.firestore().collection("users").doc(this.player.id);
+                    try {
+                        await firebase.firestore().runTransaction(async (t) => {
+                            const d = await t.get(ref);
+                            if (d.exists) t.update(ref, { tixs: (d.data().tixs || 0) + 1 });
+                            this.showNotification(`+1 TIX RECEBIDO!`);
+                        });
+                    } catch (e) {}
+                }, Config.economy.rewardInterval);
+            }
+
+            showNotification(msg) {
+                const n = document.createElement('div');
+                n.style.cssText = `position: fixed; top: 80px; left: 50%; transform: translateX(-50%); background: rgba(0, 242, 255, 0.2); color: #00f2ff; padding: 12px 30px; border-radius: 20px; border: 1px solid #00f2ff; font-family: monospace; z-index: 10000; animation: slideDown 0.5s;`;
+                n.innerText = msg; document.body.appendChild(n); setTimeout(() => n.remove(), 3000);
+            }
+
+            getAuth() { return new Promise(res => firebase.auth().onAuthStateChanged(u => u ? res(u) : window.location.href='index.html')); }
+            updateProgress(v, t) {
+                document.getElementById('progress-fill').style.width = v + "%";
+                document.getElementById('percent-num').innerText = v + "%";
+                document.getElementById('status-text').innerText = t;
+                if(v >= 100) setTimeout(() => { document.getElementById('loading-screen').style.display = "none"; document.getElementById('game-hud').style.opacity = "1"; }, 1000);
+            }
         }
 
         async function exitGame() {
-            try {
+            if (firebase.auth().currentUser) {
                 await firebase.firestore().collection("online_players").doc(firebase.auth().currentUser.uid).delete();
-                window.location.replace('home.html');
-            } catch(e) { window.location.href = 'home.html'; }
+            }
+            window.location.replace('home.html');
         }
 
         const Game = new AuroraEngine();
         window.onload = () => Game.init();
-        window.onbeforeunload = () => exitGame();
     </script>
 </body>
 </html>
