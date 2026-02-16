@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Aurora Point | 3D Online</title>
+    <title>Aurora Point | Ultra Professional Multiplayer</title>
     
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
@@ -13,247 +13,376 @@
     <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.9.1/dist/nipplejs.min.js"></script>
 
     <style>
-        body { margin: 0; overflow: hidden; background: #000; touch-action: none; font-family: sans-serif; }
-        #loading-screen { position: fixed; inset: 0; background: #001a33; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 10000; color: white; transition: 0.8s; }
-        .bar-bg { width: 200px; height: 4px; background: rgba(255,255,255,0.1); margin: 20px; border-radius: 5px; overflow: hidden; }
-        #progress-fill { width: 0%; height: 100%; background: #00ccff; transition: 0.3s; }
-        #game-hud { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: 1s; }
-        #joystick-zone { position: absolute; bottom: 40px; left: 40px; width: 120px; height: 120px; pointer-events: auto; }
-        #jump-btn { position: absolute; bottom: 60px; right: 40px; width: 70px; height: 70px; background: rgba(255,255,255,0.1); border: 2px solid white; border-radius: 50%; pointer-events: auto; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; }
-        .exit-btn { position: absolute; top: 20px; left: 20px; pointer-events: auto; background: #000; color: #fff; border: 1px solid #fff; padding: 5px 15px; }
+        :root { --primary: #00f2ff; --bg: #000810; }
+        body { margin: 0; overflow: hidden; background: var(--bg); touch-action: none; font-family: 'JetBrains Mono', monospace; }
+        
+        /* Loading Screen High-End */
+        #loading-screen { 
+            position: fixed; inset: 0; background: radial-gradient(circle at center, #001a33 0%, #000 100%); 
+            display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 10000; 
+        }
+        .scanline { width: 100%; height: 100%; position: absolute; background: linear-gradient(to bottom, rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06)); background-size: 100% 2px, 3px 100%; pointer-events: none; }
+        .loading-text { font-size: 2rem; color: var(--primary); text-shadow: 0 0 10px var(--primary); margin-bottom: 10px; font-weight: bold; }
+        .bar-container { width: 300px; height: 4px; background: rgba(255,255,255,0.05); border-radius: 2px; position: relative; overflow: hidden; border: 1px solid rgba(0, 242, 255, 0.2); }
+        #progress-fill { position: absolute; left: 0; top: 0; height: 100%; background: var(--primary); box-shadow: 0 0 15px var(--primary); transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+        
+        /* HUD UI Elements */
+        #game-hud { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 1s; }
+        #joystick-zone { position: absolute; bottom: 40px; left: 40px; width: 140px; height: 140px; pointer-events: auto; }
+        #jump-btn { 
+            position: absolute; bottom: 60px; right: 50px; width: 80px; height: 80px; 
+            background: rgba(0, 242, 255, 0.1); border: 2px solid var(--primary); border-radius: 50%; 
+            pointer-events: auto; color: white; display: flex; align-items: center; justify-content: center; 
+            font-weight: bold; backdrop-filter: blur(5px); box-shadow: 0 0 20px rgba(0, 242, 255, 0.2);
+        }
+        .stats-overlay { position: absolute; top: 20px; right: 20px; color: var(--primary); font-size: 10px; text-align: right; pointer-events: none; }
+        .exit-btn { position: absolute; top: 20px; left: 20px; pointer-events: auto; background: none; border: 1px solid red; color: red; padding: 5px 15px; cursor: pointer; border-radius: 3px; }
+        .exit-btn:hover { background: red; color: white; }
     </style>
 </head>
 <body>
 
     <div id="loading-screen">
-        <div id="percent-num" style="font-size: 30px;">0%</div>
-        <div class="bar-bg"><div id="progress-fill"></div></div>
-        <div id="status-text" style="font-size: 10px;">ENTRANDO NO SERVIDOR...</div>
+        <div class="scanline"></div>
+        <div class="loading-text" id="percent-num">0%</div>
+        <div class="bar-container"><div id="progress-fill"></div></div>
+        <div id="status-text" style="color: rgba(255,255,255,0.5); font-size: 9px; margin-top: 10px;">BOOTING KERNEL...</div>
     </div>
 
     <div id="game-hud">
+        <div class="stats-overlay" id="network-stats">PING: --ms | PLAYERS: 0</div>
         <div id="joystick-zone"></div>
-        <div id="jump-btn">PULAR</div>
-        <button class="exit-btn" onclick="exitGame()">SAIR</button>
+        <div id="jump-btn">JUMP</div>
+        <button class="exit-btn" onclick="exitGame()">DISCONNECT</button>
     </div>
 
     <script>
-        const Loading = {
-            update(v, t) {
+        /**
+         * AURORA ENGINE CORE CONFIG
+         * Objeto de configuração centralizado para fácil manutenção
+         */
+        const Config = {
+            firebase: {
+                apiKey: "AIzaSyBvwC0_9DREMFIHFelYuc5RdfXz6bpo1JA",
+                authDomain: "aurorapoint-a8a1e.firebaseapp.com",
+                projectId: "aurorapoint-a8a1e",
+                storageBucket: "aurorapoint-a8a1e.firebasestorage.app",
+                messagingSenderId: "324340380415",
+                appId: "1:324340380415:web:468fcca5188b539682d2ca"
+            },
+            physics: { gravity: -35, jumpForce: 16, walkSpeed: 13, lerpFactor: 0.18 },
+            network: { tickRate: 120, cleanupInterval: 10000 }
+        };
+
+        /**
+         * ENGINE STATE CLASS
+         * Gerencia toda a lógica de vida do jogo
+         */
+        class AuroraEngine {
+            constructor() {
+                this.scene = null;
+                this.camera = null;
+                this.renderer = null;
+                this.world = null;
+                this.clock = new THREE.Clock();
+                this.player = { body: null, mesh: null, id: null, username: "Guest" };
+                this.entities = new Map();
+                this.input = { x: 0, z: 0 };
+                this.isReady = false;
+            }
+
+            async init() {
+                try {
+                    this.updateProgress(10, "FIREBASE_HANDSHAKE");
+                    if (!firebase.apps.length) firebase.initializeApp(Config.firebase);
+                    const user = await this.getAuth();
+                    this.player.id = user.uid;
+
+                    this.updateProgress(30, "FETCHING_REMOTE_ASSETS");
+                    const doc = await firebase.firestore().collection("users").doc(this.player.id).get();
+                    this.player.data = doc.exists ? doc.data() : { avatar: {}, username: "Player" };
+                    this.player.username = this.player.data.username || "Player";
+
+                    this.updateProgress(50, "GPU_GEOMETRY_INIT");
+                    this.setupGraphics();
+                    this.setupPhysics();
+
+                    this.updateProgress(80, "NETWORK_LISTENER_START");
+                    this.setupNetwork();
+                    this.setupControls();
+
+                    this.updateProgress(100, "ENGINE_STABLE");
+                    this.startLoop();
+                } catch (e) {
+                    console.error("CRITICAL_BOOT_FAILURE", e);
+                }
+            }
+
+            getAuth() {
+                return new Promise((res) => {
+                    firebase.auth().onAuthStateChanged(u => u ? res(u) : window.location.href='index.html');
+                });
+            }
+
+            updateProgress(v, t) {
                 document.getElementById('progress-fill').style.width = v + "%";
                 document.getElementById('percent-num').innerText = v + "%";
-                if(t) document.getElementById('status-text').innerText = t;
+                document.getElementById('status-text').innerText = t;
                 if(v >= 100) {
                     setTimeout(() => {
                         document.getElementById('loading-screen').style.opacity = "0";
-                        setTimeout(() => document.getElementById('loading-screen').style.display = "none", 800);
+                        setTimeout(() => document.getElementById('loading-screen').style.display = "none", 1000);
                         document.getElementById('game-hud').style.opacity = "1";
-                    }, 500);
+                    }, 1000);
                 }
             }
-        };
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyBvwC0_9DREMFIHFelYuc5RdfXz6bpo1JA",
-            authDomain: "aurorapoint-a8a1e.firebaseapp.com",
-            projectId: "aurorapoint-a8a1e",
-            storageBucket: "aurorapoint-a8a1e.firebasestorage.app",
-            messagingSenderId: "324340380415",
-            appId: "1:324340380415:web:468fcca5188b539682d2ca"
-        };
+            setupGraphics() {
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x000205);
+                this.scene.fog = new THREE.Fog(0x000205, 10, 100);
 
-        let scene, camera, renderer, world, playerBody, playerMesh;
-        let moveData = { x: 0, z: 0 };
-        let myId, myData;
-        const otherPlayers = {}; // Onde guardamos os outros jogadores
-
-        async function engineInit() {
-            try {
-                Loading.update(20, "Firebase...");
-                if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-                const user = await new Promise(res => firebase.auth().onAuthStateChanged(u => u ? res(u) : window.location.href='index.html'));
-                myId = user.uid;
-
-                Loading.update(40, "Dados do Avatar...");
-                const doc = await firebase.firestore().collection("users").doc(myId).get();
-                myData = doc.data();
-
-                Loading.update(60, "Construindo Mundo...");
-                initThree();
-                initPhysics();
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
                 
-                Loading.update(80, "Conectando Players...");
-                setupMultiplayer();
+                this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                document.body.appendChild(this.renderer.domElement);
 
-                initControls();
-                Loading.update(100, "Iniciando...");
-                animate();
-            } catch (e) { console.error(e); }
-        }
+                // Lighting System
+                const amb = new THREE.AmbientLight(0x404040, 0.5);
+                this.scene.add(amb);
 
-        function initThree() {
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x87CEEB);
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.shadowMap.enabled = true;
-            document.body.appendChild(renderer.domElement);
+                const sun = new THREE.DirectionalLight(0xffffff, 1);
+                sun.position.set(20, 50, 20);
+                sun.castShadow = true;
+                sun.shadow.camera.left = -50;
+                sun.shadow.camera.right = 50;
+                this.scene.add(sun);
 
-            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-            const sun = new THREE.DirectionalLight(0xffffff, 0.8);
-            sun.position.set(10, 20, 10);
-            sun.castShadow = true;
-            scene.add(sun);
+                // Advanced Ground
+                const groundGeo = new THREE.PlaneGeometry(200, 200);
+                const groundMat = new THREE.MeshPhongMaterial({ color: 0x111111, shininess: 10 });
+                const ground = new THREE.Mesh(groundGeo, groundMat);
+                ground.rotation.x = -Math.PI/2;
+                ground.receiveShadow = true;
+                this.scene.add(ground);
 
-            const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshPhongMaterial({ color: 0x448822 }));
-            ground.rotation.x = -Math.PI/2;
-            ground.receiveShadow = true;
-            scene.add(ground);
-        }
-
-        function initPhysics() {
-            world = new CANNON.World();
-            world.gravity.set(0, -20, 0);
-
-            const groundBody = new CANNON.Body({ mass: 0 });
-            groundBody.addShape(new CANNON.Plane());
-            groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1,0,0), -Math.PI/2);
-            world.addBody(groundBody);
-
-            playerBody = new CANNON.Body({
-                mass: 1.0,
-                shape: new CANNON.Box(new CANNON.Vec3(0.5, 1.5, 0.4)),
-                position: new CANNON.Vec3(Math.random()*10, 5, Math.random()*10)
-            });
-            playerBody.fixedRotation = true;
-            world.addBody(playerBody);
-
-            playerMesh = buildR6(myData.avatar);
-            scene.add(playerMesh);
-        }
-
-        function buildR6(colors = {}) {
-            const group = new THREE.Group();
-            const add = (w,h,d, x,y,z, id) => {
-                const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshPhongMaterial({color: colors[id] || 0xf1f10e}));
-                m.position.set(x,y,z);
-                m.castShadow = true;
-                group.add(m);
-                group.userData[id] = m; // Guarda referência para animação
-            };
-            add(0.6, 0.6, 0.6, 0, 1.3, 0, 'body-head');
-            add(0.9, 1.2, 0.5, 0, 0.4, 0, 'body-torso');
-            add(0.4, 1.1, 0.4, -0.7, 0.4, 0, 'body-larm');
-            add(0.4, 1.1, 0.4, 0.7, 0.4, 0, 'body-rarm');
-            add(0.45, 1.1, 0.45, -0.25, -0.8, 0, 'body-lleg');
-            add(0.45, 1.1, 0.45, 0.25, -0.8, 0, 'body-rleg');
-            return group;
-        }
-
-        function setupMultiplayer() {
-            const db = firebase.firestore();
-
-            // 1. Me registrar no servidor
-            db.collection("online_players").doc(myId).set({
-                avatar: myData.avatar || {},
-                x: playerBody.position.x,
-                y: playerBody.position.y,
-                z: playerBody.position.z,
-                ry: 0,
-                lastUpdate: firebase.firestore.FieldValue.serverTimestamp()
-            });
-
-            // 2. Ouvir outros players
-            db.collection("online_players").onSnapshot(snap => {
-                snap.docChanges().forEach(change => {
-                    const id = change.doc.id;
-                    const data = change.doc.data();
-                    if(id === myId) return;
-
-                    if(change.type === "added") {
-                        const guest = buildR6(data.avatar);
-                        scene.add(guest);
-                        otherPlayers[id] = guest;
-                    }
-                    if(change.type === "modified") {
-                        if(otherPlayers[id]) {
-                            otherPlayers[id].position.set(data.x, data.y, data.z);
-                            otherPlayers[id].rotation.y = data.ry;
-                        }
-                    }
-                    if(change.type === "removed") {
-                        if(otherPlayers[id]) {
-                            scene.remove(otherPlayers[id]);
-                            delete otherPlayers[id];
-                        }
-                    }
-                });
-            });
-
-            // Loop de envio de posição (5 vezes por segundo para não travar)
-            setInterval(() => {
-                db.collection("online_players").doc(myId).update({
-                    x: playerBody.position.x,
-                    y: playerBody.position.y,
-                    z: playerBody.position.z,
-                    ry: playerMesh.rotation.y
-                });
-            }, 200);
-        }
-
-        function initControls() {
-            const joy = nipplejs.create({ zone: document.getElementById('joystick-zone'), mode: 'static', position: {left: '60px', bottom: '60px'}, color: 'white' });
-            joy.on('move', (e, d) => {
-                const p = d.distance / 50;
-                moveData.x = Math.cos(d.angle.radian) * 10 * p;
-                moveData.z = -Math.sin(d.angle.radian) * 10 * p;
-            });
-            joy.on('end', () => { moveData.x = 0; moveData.z = 0; });
-            document.getElementById('jump-btn').addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                if (Math.abs(playerBody.velocity.y) < 0.1) playerBody.velocity.y = 10;
-            });
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-            world.step(1/60);
-
-            playerMesh.position.copy(playerBody.position);
-            
-            if (Math.abs(moveData.x) > 0.1 || Math.abs(moveData.z) > 0.1) {
-                playerBody.velocity.x = moveData.x;
-                playerBody.velocity.z = moveData.z;
-                
-                const angle = Math.atan2(moveData.x, moveData.z);
-                playerMesh.rotation.y = THREE.MathUtils.lerp(playerMesh.rotation.y, angle, 0.15);
-
-                // Animação Pernas
-                const t = Date.now() * 0.01;
-                playerMesh.userData['body-lleg'].rotation.x = Math.sin(t) * 0.7;
-                playerMesh.userData['body-rleg'].rotation.x = -Math.sin(t) * 0.7;
-            } else {
-                playerBody.velocity.x *= 0.9;
-                playerBody.velocity.z *= 0.9;
-                playerMesh.userData['body-lleg'].rotation.x = THREE.MathUtils.lerp(playerMesh.userData['body-lleg'].rotation.x, 0, 0.1);
-                playerMesh.userData['body-rleg'].rotation.x = THREE.MathUtils.lerp(playerMesh.userData['body-rleg'].rotation.x, 0, 0.1);
+                const grid = new THREE.GridHelper(200, 50, 0x00f2ff, 0x001122);
+                grid.position.y = 0.01;
+                this.scene.add(grid);
             }
 
-            camera.position.lerp(playerMesh.position.clone().add(new THREE.Vector3(0, 7, 12)), 0.1);
-            camera.lookAt(playerMesh.position);
+            setupPhysics() {
+                this.world = new CANNON.World();
+                this.world.gravity.set(0, Config.physics.gravity, 0);
 
-            renderer.render(scene, camera);
+                const groundBody = new CANNON.Body({ mass: 0 });
+                groundBody.addShape(new CANNON.Plane());
+                groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1,0,0), -Math.PI/2);
+                this.world.addBody(groundBody);
+
+                // Player Physics Body
+                this.player.body = new CANNON.Body({
+                    mass: 1.5,
+                    shape: new CANNON.Box(new CANNON.Vec3(0.5, 1.5, 0.4)),
+                    position: new CANNON.Vec3(0, 5, 0),
+                    fixedRotation: true
+                });
+                this.world.addBody(this.player.body);
+
+                // Visual Representation
+                this.player.mesh = this.createR6Model(this.player.data.avatar, this.player.username);
+                this.scene.add(this.player.mesh);
+            }
+
+            createR6Model(colors = {}, name) {
+                const group = new THREE.Group();
+                const parts = {};
+                const matConf = (c) => new THREE.MeshPhongMaterial({ color: c || 0x00f2ff });
+
+                const add = (w,h,d, x,y,z, id) => {
+                    const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), matConf(colors[id]));
+                    m.position.set(x,y,z);
+                    m.castShadow = true;
+                    group.add(m);
+                    parts[id] = m;
+                };
+
+                add(0.6, 0.6, 0.6, 0, 1.3, 0, 'body-head');
+                add(0.9, 1.2, 0.5, 0, 0.4, 0, 'body-torso');
+                add(0.4, 1.1, 0.4, -0.7, 0.4, 0, 'body-larm');
+                add(0.4, 1.1, 0.4, 0.7, 0.4, 0, 'body-rarm');
+                add(0.45, 1.1, 0.45, -0.25, -0.8, 0, 'body-lleg');
+                add(0.45, 1.1, 0.45, 0.25, -0.8, 0, 'body-rleg');
+
+                group.userData.parts = parts;
+                return group;
+            }
+
+            setupNetwork() {
+                const db = firebase.firestore();
+                const col = db.collection("online_players");
+
+                // Heartbeat / Registration
+                col.doc(this.player.id).set({
+                    name: this.player.username,
+                    avatar: this.player.data.avatar || {},
+                    x: 0, y: 5, z: 0, ry: 0,
+                    lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+
+                // Synchronized Snapshot
+                col.onSnapshot(snap => {
+                    snap.docChanges().forEach(change => {
+                        const id = change.doc.id;
+                        const data = change.doc.data();
+                        if(id === this.player.id) return;
+
+                        if(change.type === "added") {
+                            const ent = this.createR6Model(data.avatar, data.name);
+                            ent.userData.targetPos = new THREE.Vector3(data.x, data.y, data.z);
+                            ent.userData.targetRot = data.ry;
+                            this.scene.add(ent);
+                            this.entities.set(id, ent);
+                        }
+                        if(change.type === "modified") {
+                            const ent = this.entities.get(id);
+                            if(ent) {
+                                ent.userData.targetPos.set(data.x, data.y, data.z);
+                                ent.userData.targetRot = data.ry;
+                            }
+                        }
+                        if(change.type === "removed") {
+                            const ent = this.entities.get(id);
+                            if(ent) { this.scene.remove(ent); this.entities.delete(id); }
+                        }
+                    });
+                    document.getElementById('network-stats').innerText = `PLAYERS: ${this.entities.size + 1}`;
+                });
+
+                // Network Transmission Loop
+                setInterval(() => {
+                    col.doc(this.player.id).update({
+                        x: this.player.body.position.x,
+                        y: this.player.body.position.y,
+                        z: this.player.body.position.z,
+                        ry: this.player.mesh.rotation.y,
+                        lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+                    }).catch(() => {});
+                }, Config.network.tickRate);
+            }
+
+            setupControls() {
+                const zone = document.getElementById('joystick-zone');
+                const joy = nipplejs.create({ zone, mode: 'static', position: {left: '70px', bottom: '70px'}, color: '#00f2ff' });
+                
+                joy.on('move', (e, d) => {
+                    const power = d.distance / 50;
+                    this.input.x = Math.cos(d.angle.radian) * Config.physics.walkSpeed * power;
+                    this.input.z = -Math.sin(d.angle.radian) * Config.physics.walkSpeed * power;
+                });
+                joy.on('end', () => { this.input.x = 0; this.input.z = 0; });
+
+                document.getElementById('jump-btn').addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    if(Math.abs(this.player.body.velocity.y) < 0.5) {
+                        this.player.body.velocity.y = Config.physics.jumpForce;
+                    }
+                });
+            }
+
+            startLoop() {
+                const animate = () => {
+                    requestAnimationFrame(animate);
+                    const dt = this.clock.getDelta();
+                    
+                    this.updatePhysics(dt);
+                    this.updateEntities();
+                    this.updateCamera();
+                    
+                    this.renderer.render(this.scene, this.camera);
+                };
+                animate();
+            }
+
+            updatePhysics(dt) {
+                this.world.step(1/60);
+                this.player.mesh.position.copy(this.player.body.position);
+
+                if(Math.abs(this.input.x) > 0.1 || Math.abs(this.input.z) > 0.1) {
+                    this.player.body.velocity.x = this.input.x;
+                    this.player.body.velocity.z = this.input.z;
+                    
+                    const angle = Math.atan2(this.input.x, this.input.z);
+                    this.player.mesh.rotation.y = this.lerpAngle(this.player.mesh.rotation.y, angle, Config.physics.lerpFactor);
+                    this.animateWalking(this.player.mesh, true);
+                } else {
+                    this.player.body.velocity.x *= 0.85;
+                    this.player.body.velocity.z *= 0.85;
+                    this.animateWalking(this.player.mesh, false);
+                }
+            }
+
+            updateEntities() {
+                this.entities.forEach(ent => {
+                    ent.position.lerp(ent.userData.targetPos, 0.15);
+                    ent.rotation.y = this.lerpAngle(ent.rotation.y, ent.userData.targetRot, 0.15);
+                    
+                    const dist = ent.position.distanceTo(ent.userData.targetPos);
+                    this.animateWalking(ent, dist > 0.1);
+                });
+            }
+
+            lerpAngle(a, b, t) {
+                let d = b - a;
+                while (d < -Math.PI) d += Math.PI * 2;
+                while (d > Math.PI) d -= Math.PI * 2;
+                return a + d * t;
+            }
+
+            animateWalking(mesh, active) {
+                const t = Date.now() * 0.012;
+                const p = mesh.userData.parts;
+                if(active) {
+                    p['body-lleg'].rotation.x = Math.sin(t) * 0.7;
+                    p['body-rleg'].rotation.x = -Math.sin(t) * 0.7;
+                    p['body-larm'].rotation.x = -Math.sin(t) * 0.5;
+                    p['body-rarm'].rotation.x = Math.sin(t) * 0.5;
+                } else {
+                    Object.values(p).forEach(part => {
+                        part.rotation.x = THREE.MathUtils.lerp(part.rotation.x, 0, 0.1);
+                    });
+                }
+            }
+
+            updateCamera() {
+                const offset = new THREE.Vector3(0, 8, 14);
+                const targetPos = this.player.mesh.position.clone().add(offset);
+                this.camera.position.lerp(targetPos, 0.1);
+                this.camera.lookAt(this.player.mesh.position);
+            }
         }
 
-        function exitGame() {
-            firebase.firestore().collection("online_players").doc(myId).delete().then(() => {
-                location.href = 'home.html';
-            });
+        /**
+         * GLOBAL DISCONNECT
+         */
+        async function exitGame() {
+            try {
+                const uid = firebase.auth().currentUser.uid;
+                await firebase.firestore().collection("online_players").doc(uid).delete();
+                window.location.replace('home.html');
+            } catch(e) {
+                window.location.href = 'home.html';
+            }
         }
 
-        window.onload = engineInit;
-        window.onbeforeunload = () => firebase.firestore().collection("online_players").doc(myId).delete();
+        // Initialize Engine
+        const Game = new AuroraEngine();
+        window.onload = () => Game.init();
+        window.onbeforeunload = () => exitGame();
+
     </script>
 </body>
 </html>
