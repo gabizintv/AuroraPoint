@@ -8,50 +8,66 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        body { background: #E1E1E1; color: #333; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
+        body { background: #E1E1E1; color: #333; display: flex; flex-direction: column; align-items: center; }
 
-        /* Topo Clássico Aurora */
+        /* Topo Azul Oficial conforme a imagem */
         .top-bar { 
-            background: #003366; 
-            color: white; 
-            padding: 12px 20px; 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-            border-bottom: 4px solid #002244;
+            background: #003366; color: white; padding: 12px 20px; 
+            width: 100%; display: flex; justify-content: space-between; 
+            align-items: center; border-bottom: 4px solid #002244;
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
         }
         .user-stats { font-size: 13px; font-weight: bold; text-align: right; }
-        .stat-line { color: #FFD700; font-size: 14px; } /* Cor dourada para pontos/tickets */
+        .stat-line { color: #FFD700; font-size: 14px; }
 
-        /* Container Principal */
-        .container { padding: 25px; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+        /* Botão + no Header */
+        .btn-plus {
+            width: 35px; height: 35px; background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.3); border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 24px; cursor: pointer;
+        }
+
+        .container { padding: 25px; display: flex; flex-direction: column; align-items: center; gap: 20px; width: 100%; }
         
-        /* Cards */
+        /* Cards Brancos Arredondados */
         .card { 
             background: white; border: 1px solid #CCC; padding: 15px; 
             border-radius: 12px; width: 100%; max-width: 320px; 
             text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            transition: transform 0.2s;
         }
-        .card:active { transform: scale(0.98); }
         .card img { width: 100%; border-radius: 8px; margin-bottom: 12px; border: 1px solid #EEE; }
         .card-title { display: block; font-weight: bold; margin-bottom: 8px; color: #003366; font-size: 20px; }
         
-        /* Botões */
-        .btn-play { width: 100%; background: #008000; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 16px; box-shadow: 0 4px #005500; }
-        .btn-catalog { width: 100%; background: #003366; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 16px; box-shadow: 0 4px #001a33; }
+        /* Botões Coloridos */
+        .btn-play { width: 100%; background: #008000; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 16px; box-shadow: 0 4px #005500; text-transform: uppercase; }
+        .btn-blue { width: 100%; background: #003366; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 16px; box-shadow: 0 4px #001a33; text-transform: uppercase; }
         
-        .btn-logout { background: none; border: none; color: #CC0000; font-size: 13px; cursor: pointer; margin-top: 30px; font-weight: bold; text-decoration: underline; }
+        .btn-logout { background: none; border: none; color: #CC0000; font-size: 13px; cursor: pointer; margin-top: 20px; font-weight: bold; text-decoration: underline; }
+
+        /* Modal de Busca */
+        #search-modal {
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+            z-index: 1000; align-items: center; justify-content: center;
+        }
+        .modal-box { background: white; width: 85%; max-width: 320px; border-radius: 12px; padding: 20px; }
+        .search-row { display: flex; gap: 8px; margin-top: 10px; }
+        .search-row input { flex: 1; padding: 10px; border: 1px solid #CCC; border-radius: 8px; }
+        .btn-ok { background: #003366; color: white; border: none; padding: 0 15px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        
+        .user-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #EEE; }
     </style>
 </head>
 <body>
 
     <header class="top-bar">
-        <img src="https://i.postimg.cc/jScG67Yr/Design-sem-nome(1).png" width="80">
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <div class="btn-plus" onclick="openSearch()">+</div>
+            <img src="https://i.postimg.cc/jScG67Yr/Design-sem-nome(1).png" width="70">
+        </div>
         <div class="user-stats">
-            <div id="display-name" style="font-size: 16px; margin-bottom: 4px;">Carregando...</div>
+            <div id="display-name" style="font-size: 15px; margin-bottom: 4px;">Carregando...</div>
             <div class="stat-line">🎟️ <span id="user-tickets">0</span> | ⭐ <span id="user-points">0</span></div>
         </div>
     </header>
@@ -64,12 +80,32 @@
         </div>
 
         <div class="card">
+            <span class="card-title">Meus Amigos</span>
+            <p style="font-size: 14px; margin-bottom: 15px; color: #666;">Confira quem está online.</p>
+            <button class="btn-blue" onclick="location.href='friends.html'">VER AMIGOS</button>
+        </div>
+
+        <div class="card">
             <span class="card-title">Meu Avatar</span>
-            <p style="font-size: 14px; margin-bottom: 15px; color: #666;">Personalize as cores do seu personagem R6.</p>
-            <button class="btn-catalog" onclick="location.href='catalog.html'">EDITAR AVATAR</button>
+            <p style="font-size: 14px; margin-bottom: 15px; color: #666;">Personalize as cores do seu R6.</p>
+            <button class="btn-blue" onclick="location.href='avatar.html'">EDITAR AVATAR</button>
         </div>
 
         <button class="btn-logout" onclick="logout()">Sair da Conta</button>
+    </div>
+
+    <div id="search-modal">
+        <div class="modal-box">
+            <div style="display:flex; justify-content:space-between; font-weight:bold; color:#003366;">
+                <span>Adicionar Amigo</span>
+                <span onclick="closeSearch()" style="cursor:pointer; color:red; padding: 5px;">X</span>
+            </div>
+            <div class="search-row">
+                <input type="text" id="s-input" placeholder="Nome do usuário...">
+                <button class="btn-ok" onclick="search()">OK</button>
+            </div>
+            <div id="s-results" style="max-height: 200px; overflow-y: auto; margin-top: 15px;"></div>
+        </div>
     </div>
 
     <script>
@@ -85,39 +121,53 @@
         const auth = firebase.auth();
         const db = firebase.firestore();
 
-        // Verificação de Login e Carregamento de Nome REAL
+        // Carrega dados REAIS do Firestore
         auth.onAuthStateChanged(user => {
-            if (!user) {
-                window.location.href = 'index.html';
-            } else {
-                // Tenta buscar no Banco de Dados o campo 'username'
+            if (!user) { window.location.href = 'index.html'; }
+            else {
                 db.collection("users").doc(user.uid).get().then(doc => {
-                    let nomeFinal = "";
-                    
-                    if (doc.exists && doc.data().username) {
-                        nomeFinal = doc.data().username;
-                        // Atualiza status se existirem
-                        document.getElementById('user-tickets').innerText = doc.data().tickets || 0;
-                        document.getElementById('user-points').innerText = doc.data().points || 0;
-                    } else {
-                        // Se não achar no banco, limpa o e-mail (ex: lucas@aurora.com vira Lucas)
-                        nomeFinal = user.email.split('@')[0];
-                        nomeFinal = nomeFinal.charAt(0).toUpperCase() + nomeFinal.slice(1);
+                    if (doc.exists) {
+                        const data = doc.data();
+                        document.getElementById('display-name').innerText = "Olá, " + (data.username || "Jogador");
+                        document.getElementById('user-tickets').innerText = data.tickets || 0;
+                        document.getElementById('user-points').innerText = data.points || 0;
                     }
-                    
-                    document.getElementById('display-name').innerText = "Olá, " + nomeFinal;
-                }).catch(err => {
-                    console.error("Erro ao carregar dados:", err);
-                    document.getElementById('display-name').innerText = "Olá, Jogador";
                 });
             }
         });
 
-        function logout() {
-            auth.signOut().then(() => {
-                window.location.href = 'index.html';
+        function openSearch() { document.getElementById('search-modal').style.display = 'flex'; }
+        function closeSearch() { document.getElementById('search-modal').style.display = 'none'; }
+
+        async function search() {
+            const val = document.getElementById('s-input').value.toLowerCase().trim();
+            const res = document.getElementById('s-results');
+            if(val.length < 2) return alert("Digite ao menos 2 letras");
+
+            res.innerHTML = "<p style='text-align:center; font-size:12px;'>Buscando...</p>";
+            const snap = await db.collection("users").get();
+            res.innerHTML = "";
+            
+            snap.forEach(doc => {
+                const u = doc.data();
+                if(doc.id !== auth.currentUser.uid && (u.username||'').toLowerCase().includes(val)) {
+                    res.innerHTML += `
+                        <div class="user-item">
+                            <span style="font-weight:bold; color:#003366;">${u.username}</span>
+                            <button onclick="add('${doc.id}', this)" style="background:#008000; color:white; border:none; padding:6px 12px; border-radius:5px; font-weight:bold; cursor:pointer;">ADD</button>
+                        </div>`;
+                }
             });
         }
+
+        async function add(id, btn) {
+            btn.innerText = "...";
+            await db.collection("users").doc(auth.currentUser.uid).collection("friends").doc(id).set({ status: "friend" });
+            btn.innerText = "✓";
+            btn.style.background = "#666";
+        }
+
+        function logout() { auth.signOut().then(() => { window.location.href = 'index.html'; }); }
     </script>
 </body>
 </html>

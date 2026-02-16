@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aurora Point | Meus Amigos</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: sans-serif; }
+        body { background: #E1E1E1; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        
+        .header { width: 100%; max-width: 320px; display: flex; align-items: center; margin-bottom: 20px; }
+        .btn-back { background: #003366; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-right: 15px; }
+
+        .friend-card { 
+            background: white; border: 1px solid #CCC; padding: 15px; 
+            border-radius: 12px; width: 100%; max-width: 320px; 
+            display: flex; align-items: center; gap: 15px; margin-bottom: 12px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        .avatar-preview { width: 50px; height: 50px; border-radius: 50%; border: 2px solid #003366; }
+        .friend-info { font-weight: bold; color: #003366; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <button class="btn-back" onclick="location.href='home.html'">< Voltar</button>
+        <h2 style="color:#003366; font-size: 18px;">Meus Amigos</h2>
+    </div>
+
+    <div id="friends-list" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
+        <p>Carregando amigos...</p>
+    </div>
+
+    <script>
+        const firebaseConfig = { /* COLOQUE AQUI SUA CONFIGURAÇÃO DO FIREBASE */ };
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        firebase.auth().onAuthStateChanged(user => {
+            if(user) loadFriends(user.uid);
+            else location.href='index.html';
+        });
+
+        async function loadFriends(uid) {
+            const list = document.getElementById('friends-list');
+            const snap = await db.collection("users").doc(uid).collection("friends").get();
+            list.innerHTML = "";
+
+            if(snap.empty) {
+                list.innerHTML = "<p style='color:#666;'>Nenhum amigo adicionado.</p>";
+                return;
+            }
+
+            snap.forEach(async (doc) => {
+                const friendSnap = await db.collection("users").doc(doc.id).get();
+                if(friendSnap.exists) {
+                    const data = friendSnap.data();
+                    const torso = data.avatar ? data.avatar['body-torso'] : '#555';
+                    list.innerHTML += `
+                        <div class="friend-card">
+                            <div class="avatar-preview" style="background:${torso}"></div>
+                            <div class="friend-info">${data.username || "Jogador"}</div>
+                        </div>`;
+                }
+            });
+        }
+    </script>
+</body>
+</html>
