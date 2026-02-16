@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Aurora Point | 3D Online</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.9.1/dist/nipplejs.min.js"></script>
+
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; touch-action: none; font-family: sans-serif; }
+        #loading-screen { position: fixed; inset: 0; background: #001a33; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 10000; color: white; transition: 0.8s; }
+        .bar-bg { width: 200px; height: 4px; background: rgba(255,255,255,0.1); margin: 20px; border-radius: 5px; overflow: hidden; }
+        #progress-fill { width: 0%; height: 100%; background: #00ccff; transition: 0.3s; }
+        #game-hud { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: 1s; }
+        #joystick-zone { position: absolute; bottom: 40px; left: 40px; width: 120px; height: 120px; pointer-events: auto; }
+        #jump-btn { position: absolute; bottom: 60px; right: 40px; width: 70px; height: 70px; background: rgba(255,255,255,0.1); border: 2px solid white; border-radius: 50%; pointer-events: auto; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; }
+        .exit-btn { position: absolute; top: 20px; left: 20px; pointer-events: auto; background: #000; color: #fff; border: 1px solid #fff; padding: 5px 15px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div id="loading-screen">
+        <div id="percent-num" style="font-size: 30px;">0%</div>
+        <div class="bar-bg"><div id="progress-fill"></div></div>
+        <div id="status-text" style="font-size: 10px;">CONECTANDO AO SERVIDOR...</div>
+    </div>
+
+    <div id="game-hud">
+        <div id="joystick-zone"></div>
+        <div id="jump-btn">PULAR</div>
+        <button class="exit-btn" onclick="exitGame()">SAIR</button>
+    </div>
+
+    <script>
+        const Loading = {
+            update(v, t) {
+                document.getElementById('progress-fill').style.width = v + "%";
+                document.getElementById('percent-num').innerText = v + "%";
+                if(t) document.getElementById('status-text').innerText = t;
+                if(v >= 100) {
+                    setTimeout(() => {
+                        document.getElementById('loading-screen').style.opacity = "0";
+                        setTimeout(() => document.getElementById('loading-screen').style.display = "none", 800);
+                        document.getElementById('game-hud').style.opacity = "1";
+                    }, 500);
+                }
+            }
+        };
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBvwC0_9DREMFIHFelYuc5RdfXz6bpo1JA",
+            authDomain: "aurorapoint-a8a1e.firebaseapp.com",
+            projectId: "aurorapoint-a8a1e",
+            storageBucket: "aurorapoint-a8a1e.firebasestorage.app",
+            messagingSenderId: "324340380415",
+            appId: "1:324340380415:web:468fcca5188b539682d2ca"
+        };
+
+        let scene, camera, renderer, world, playerBody, playerMesh;
+        let moveData = { x: 0, z: 0 };
+        let myId, myUsername, myAvatarColors;
+        const bodyParts = {};
+        const remotePlayers = {}; // Guarda outros jogadores
+
+        async function engineInit() {
+            try {
+                Loading.update(20, "Firebase...");
+                if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+                const user = await new Promise(res => firebase.auth().onAuthStateChanged(u => u ? res(u) : window.location.href='index.html'));
+                myId = user.uid;
+
+                // Pegar dados do usuário para o avatar
+                const doc = await firebase.firestore().collection("users").doc(myId).get();
+                const userData = doc.data() || {};
+                myUsername = userData.username || "Jogador";
+                myAvatarColors = userData.avatar || {};
+
+                Loading.update(50, "Motores 3D...");
+                initThree();
+                initPhysics();
+
+                Loading.update(80, "Sincronizando Jogadores...");
+                initMultiplayer();
+
+                initControls();
+                Loading.update(100, "Pronto!");
+                animate();
+            } catch (e) { console.error(e); }
+        }
+
+        function initThree() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+            sun.position.set(10, 20, 10);
+            sun.castShadow = true;
+            scene.add(sun);
+
+            const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshPhongMaterial({ color: 0x448822 }));
+            ground.rotation.x = -Math.PI/2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+        }
+
+        function initPhysics() {
+            world = new CANNON.World();
+            world.gravity.set(0, -20, 0);
+
+            const groundBody = new CANNON.Body({ mass: 0 });
+            groundBody.addShape(new CANNON.Plane());
+            groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1,0,0), -Math.PI/2);
+            world.addBody(groundBody);
+
+            playerBody = new CANNON.Body({
+                mass: 1.0,
+                shape: new CANNON.Box(new CANNON.Vec3(0.5, 1.5, 0.4)),
+                position: new CANNON.Vec3(Math.random()*5, 5, Math.random()*5)
+            });
+            playerBody.fixedRotation = true;
+            playerBody.linearDamping = 0.5;
+            world.addBody(playerBody);
+
+            playerMesh = createR6Mesh(myAvatarColors, myUsername);
+            scene.add(playerMesh);
+        }
+
+        // Função para criar o boneco R6 (serve para você e para os outros)
+        function createR6Mesh(colors, name) {
+            const group = new THREE.Group();
+            const parts = {};
+            const add = (w,h,d, x,y,z, id) => {
+                const mat = new THREE.MeshPhongMaterial({color: colors[id] || 0xf1f10e});
+                const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+                m.position.set(x,y,z);
+                m.castShadow = true;
+                group.add(m);
+                parts[id] = m;
+            };
+            add(0.6, 0.6, 0.6, 0, 1.3, 0, 'body-head');
+            add(0.9, 1.2, 0.5, 0, 0.4, 0, 'body-torso');
+            add(0.4, 1.1, 0.4, -0.7, 0.4, 0, 'body-larm');
+            add(0.4, 1.1, 0.4, 0.7, 0.4, 0, 'body-rarm');
+            add(0.45, 1.1, 0.45, -0.25, -0.8, 0, 'body-lleg');
+            add(0.45, 1.1, 0.45, 0.25, -0.8, 0, 'body-rleg');
+
+            if(name === myUsername) Object.assign(bodyParts, parts);
+            group.userData.parts = parts; // Para animação dos remotos
+            return group;
+        }
+
+        function initMultiplayer() {
+            const db = firebase.firestore();
+            
+            // Registrar minha entrada
+            db.collection("online_players").doc(myId).set({
+                username: myUsername,
+                avatar: myAvatarColors,
+                x: playerBody.position.x,
+                y: playerBody.position.y,
+                z: playerBody.position.z,
+                ry: 0,
+                lastUpdate: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            // Ouvir outros jogadores
+            db.collection("online_players").onSnapshot(snap => {
+                snap.docChanges().forEach(change => {
+                    const data = change.doc.data();
+                    const id = change.doc.id;
+                    if(id === myId) return;
+
+                    if(change.type === "added") {
+                        remotePlayers[id] = createR6Mesh(data.avatar, data.username);
+                        scene.add(remotePlayers[id]);
+                    }
+                    if(change.type === "modified") {
+                        if(remotePlayers[id]) {
+                            remotePlayers[id].position.set(data.x, data.y, data.z);
+                            remotePlayers[id].rotation.y = data.ry;
+                        }
+                    }
+                    if(change.type === "removed") {
+                        if(remotePlayers[id]) {
+                            scene.remove(remotePlayers[id]);
+                            delete remotePlayers[id];
+                        }
+                    }
+                });
+            });
+
+            // Loop de upload de posição (curto para não sobrecarregar o Firebase)
+            setInterval(() => {
+                db.collection("online_players").doc(myId).update({
+                    x: playerBody.position.x,
+                    y: playerBody.position.y,
+                    z: playerBody.position.z,
+                    ry: playerMesh.rotation.y
+                });
+            }, 200);
+        }
+
+        function initControls() {
+            const joy = nipplejs.create({ zone: document.getElementById('joystick-zone'), mode: 'static', position: {left: '60px', bottom: '60px'}, color: 'white' });
+            joy.on('move', (e, d) => {
+                const p = d.distance / 50;
+                moveData.x = Math.cos(d.angle.radian) * 10 * p;
+                moveData.z = -Math.sin(d.angle.radian) * 10 * p;
+            });
+            joy.on('end', () => { moveData.x = 0; moveData.z = 0; });
+            
+            document.getElementById('jump-btn').addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (Math.abs(playerBody.velocity.y) < 0.2) playerBody.velocity.y = 10;
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            world.step(1/60);
+
+            playerMesh.position.copy(playerBody.position);
+            
+            if (Math.abs(moveData.x) > 0.1 || Math.abs(moveData.z) > 0.1) {
+                playerBody.velocity.x = moveData.x;
+                playerBody.velocity.z = moveData.z;
+                
+                const angle = Math.atan2(moveData.x, moveData.z);
+                playerMesh.rotation.y = THREE.MathUtils.lerp(playerMesh.rotation.y, angle, 0.15);
+
+                const t = Date.now() * 0.01;
+                bodyParts['body-lleg'].rotation.x = Math.sin(t) * 0.7;
+                bodyParts['body-rleg'].rotation.x = -Math.sin(t) * 0.7;
+            } else {
+                playerBody.velocity.x *= 0.9;
+                playerBody.velocity.z *= 0.9;
+                bodyParts['body-lleg'].rotation.x = THREE.MathUtils.lerp(bodyParts['body-lleg'].rotation.x, 0, 0.1);
+                bodyParts['body-rleg'].rotation.x = THREE.MathUtils.lerp(bodyParts['body-rleg'].rotation.x, 0, 0.1);
+            }
+
+            camera.position.lerp(playerMesh.position.clone().add(new THREE.Vector3(0, 7, 12)), 0.1);
+            camera.lookAt(playerMesh.position);
+
+            renderer.render(scene, camera);
+        }
+
+        function exitGame() {
+            firebase.firestore().collection("online_players").doc(myId).delete().then(() => {
+                location.href='home.html';
+            });
+        }
+
+        window.onload = engineInit;
+        // Limpeza se fechar a aba
+        window.onbeforeunload = () => firebase.firestore().collection("online_players").doc(myId).delete();
+    </script>
+</body>
+</html>
