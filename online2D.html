@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Aurora Point | 2D Sync</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.9.1/dist/nipplejs.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000810; touch-action: none; font-family: sans-serif; }
+        canvas { display: block; }
+        #hud { position: fixed; top: 15px; left: 15px; color: #00f2ff; pointer-events: none; text-shadow: 2px 2px #000; font-family: monospace; }
+        .exit-btn { position: fixed; top: 15px; right: 15px; background: rgba(255,0,0,0.4); border: 1px solid red; color: white; padding: 6px 12px; border-radius: 4px; pointer-events: auto; cursor: pointer; }
+        #joystick-zone { position: fixed; bottom: 40px; left: 40px; width: 120px; height: 120px; }
+    </style>
+</head>
+<body>
+
+    <div id="hud">MODO 2D | STATUS: ONLINE<br>PLAYERS: <span id="p-count">1</span></div>
+    <button class="exit-btn" onclick="exitGame()">SAIR</button>
+    <canvas id="gameCanvas"></canvas>
+    <div id="joystick-zone"></div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBvwC0_9DREMFIHFelYuc5RdfXz6bpo1JA",
+            authDomain: "aurorapoint-a8a1e.firebaseapp.com",
+            projectId: "aurorapoint-a8a1e",
+            storageBucket: "aurorapoint-a8a1e.firebasestorage.app",
+            messagingSenderId: "324340380415",
+            appId: "1:324340380415:web:468fcca5188b539682d2ca"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // --- CONFIGURAÇÃO DE ZOOM E VELOCIDADE ---
+        const SCALE = 45;      // Mais alto = Mais Zoom (Bonecos maiores)
+        const SPEED = 0.25;    // Ajustado para não ser rápido demais
+        // -----------------------------------------
+
+        let myId, myName = "Player", myAvatar = {};
+        let players = new Map();
+        let pos = { x: 0, z: 0 }; 
+        let input = { x: 0, z: 0 };
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        firebase.auth().onAuthStateChanged(async user => {
+            if (!user) { window.location.href='index.html'; return; }
+            myId = user.uid;
+            const doc = await db.collection("users").doc(myId).get();
+            if(doc.exists) {
+                myName = doc.data().username || "Player";
+                myAvatar = doc.data().avatar || {};
+            }
+            startNetwork();
+        });
+
+        function startNetwork() {
+            setInterval(() => {
+                db.collection("online_players").doc(myId).set({
+                    name: myName, avatar: myAvatar, x: pos.x, y: 0, z: pos.z,
+                    lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+            }, 100);
+
+            db.collection("online_players").onSnapshot(snap => {
+                players.clear();
+                snap.forEach(doc => { if(doc.id !== myId) players.set(doc.id, doc.data()); });
+                document.getElementById('p-count').innerText = snap.size;
+            });
+            loop();
+        }
+
+        nipplejs.create({ zone: document.getElementById('joystick-zone'), mode: 'static', position: {left: '60px', bottom: '60px'}, color: '#00f2ff' })
+        .on('move', (e, d) => {
+            input.x = Math.cos(d.angle.radian) * (d.distance/50);
+            input.z = -Math.sin(d.angle.radian) * (d.distance/50);
+        }).on('end', () => { input.x = 0; input.z = 0; });
+
+        function drawPlayer(x, z, name, avatar, isMe) {
+            const screenX = (x * SCALE) + canvas.width/2;
+            const screenY = (z * SCALE) + canvas.height/2;
+
+            // Sombra
+            ctx.fillStyle = "rgba(0,0,0,0.3)";
+            ctx.beginPath(); ctx.ellipse(screenX, screenY + 5, 12, 6, 0, 0, Math.PI*2); ctx.fill();
+
+            // Boneco R6 Style 2D
+            ctx.fillStyle = avatar['body-torso'] || (isMe ? "#00f2ff" : "#ff3333");
+            ctx.fillRect(screenX - 12, screenY - 12, 24, 24); // Torso
+            ctx.fillStyle = avatar['body-head'] || "#ffdbac";
+            ctx.fillRect(screenX - 8, screenY - 28, 16, 16); // Cabeça
+
+            // Nome
+            ctx.fillStyle = "white";
+            ctx.font = "bold 12px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText(name, screenX, screenY - 35);
+        }
+
+        function loop() {
+            pos.x += input.x * SPEED;
+            pos.z += input.z * SPEED;
+
+            ctx.fillStyle = "#000810";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Grid Sincronizado
+            ctx.strokeStyle = "#001a33";
+            ctx.beginPath();
+            for(let i = -25; i <= 25; i++) {
+                let lx = (i * SCALE) - (pos.x * SCALE) + canvas.width/2;
+                ctx.moveTo(lx, 0); ctx.lineTo(lx, canvas.height);
+                let ly = (i * SCALE) - (pos.z * SCALE) + canvas.height/2;
+                ctx.moveTo(0, ly); ctx.lineTo(canvas.width, ly);
+            }
+            ctx.stroke();
+
+            players.forEach(p => {
+                drawPlayer(p.x - pos.x, p.z - pos.z, p.name, p.avatar || {}, false);
+            });
+
+            drawPlayer(0, 0, myName, myAvatar, true);
+            requestAnimationFrame(loop);
+        }
+
+        async function exitGame() {
+            if (myId) await db.collection("online_players").doc(myId).delete();
+            window.location.href = 'home.html';
+        }
+
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+    </script>
+</body>
+</html>

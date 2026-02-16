@@ -18,16 +18,19 @@
         }
         .user-stats { font-size: 13px; font-weight: bold; text-align: right; }
         .stat-line { color: #FFD700; font-size: 14px; }
-        /* Brilho neon suave para os Tixs */
         #user-tix { color: #00f2ff; text-shadow: 0 0 5px rgba(0,242,255,0.5); }
 
         .container { padding: 25px; display: flex; flex-direction: column; align-items: center; gap: 20px; width: 100%; }
         
         .card { background: white; border: 1px solid #CCC; padding: 15px; border-radius: 12px; width: 100%; max-width: 320px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        .card img { width: 100%; border-radius: 8px; margin-bottom: 12px; border: 1px solid #EEE; }
+        .card img { width: 100%; border-radius: 8px; margin-bottom: 12px; border: 1px solid #EEE; height: 160px; object-fit: cover; }
         .card-title { display: block; font-weight: bold; margin-bottom: 8px; color: #003366; font-size: 20px; }
         
         .btn-play { width: 100%; background: #008000; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; box-shadow: 0 4px #005500; text-transform: uppercase; margin-bottom: 10px; }
+        
+        /* Botão estilizado para o modo 2D - Um tom cinza azulado profissional */
+        .btn-2d { width: 100%; background: #34495e; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; box-shadow: 0 4px #2c3e50; text-transform: uppercase; margin-bottom: 10px; }
+
         .btn-blue { width: 100%; background: #003366; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; box-shadow: 0 4px #001a33; text-transform: uppercase; margin-top: 10px; }
         
         .btn-logout { background: none; border: none; color: #CC0000; font-size: 13px; cursor: pointer; margin-top: 20px; font-weight: bold; text-decoration: underline; }
@@ -47,7 +50,13 @@
         <div class="card">
             <img src="https://art.ngfiles.com/comments/739000/iu_739223_7577476.webp">
             <span class="card-title">Classic Crossroads</span>
-            <button class="btn-play" onclick="location.href='online.html'">JOGAR NO SERVIDOR</button>
+            <button class="btn-play" onclick="location.href='online.html'">JOGAR NO SERVIDOR (3D)</button>
+        </div>
+
+        <div class="card">
+            <img src="https://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/f/87fc7cf0-be45-413f-bc4c-787a265f9edd/dfkttxu-f18b2649-3997-42b9-97bb-cee6d3d6dbe9.png/v1/fill/w_1263,h_632,q_70,strp/crossroads_2_by_furnacemutidd_dfkttxu-pre.jpg?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7ImhlaWdodCI6Ijw9NjgzIiwicGF0aCI6Ii9mLzg3ZmM3Y2YwLWJlNDUtNDEzZi1iYzRjLTc4N2EyNjVmOWVkZC9kZmt0dHh1LWYxOGIyNjQ5LTM5OTctNDJiOS05N2JiLWNlZTZkM2Q2ZGJlOS5wbmciLCJ3aWR0aCI6Ijw9MTM2NCJ9XV0sImF1ZCI6WyJ1cm46c2VydmljZTppbWFnZS5vcGVyYXRpb25zIl19.G7540Pufe4cJnKx_z9ss3V0CjERQxd1LjvSN7D3gGGs">
+            <span class="card-title">Retro Crossroads 2D</span>
+            <button class="btn-2d" onclick="location.href='online2D.html'">ENTRAR NO MODO 2D</button>
         </div>
 
         <div class="card">
@@ -76,18 +85,13 @@
                 window.location.href = 'index.html'; 
             } else {
                 const userRef = db.collection("users").doc(user.uid);
-
-                // LISTENER EM TEMPO REAL (onSnapshot)
-                // Isso faz com que os Tixs aumentem na tela assim que o servidor liberar
                 userRef.onSnapshot((doc) => {
                     if (doc.exists) {
                         const data = doc.data();
                         document.getElementById('display-name').innerText = "Olá, " + (data.username || "Jogador");
-                        document.getElementById('user-tix').innerText = data.tixs || 0; // Nome corrigido para tixs
+                        document.getElementById('user-tix').innerText = data.tixs || 0;
                         document.getElementById('user-points').innerText = data.points || 0;
                     }
-                }, error => {
-                    console.error("Erro ao escutar mudanças:", error);
                 });
             }
         });

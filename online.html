@@ -55,7 +55,7 @@
                 appId: "1:324340380415:web:468fcca5188b539682d2ca"
             },
             physics: { gravity: -35, jumpForce: 16, walkSpeed: 13, lerpFactor: 0.18 },
-            network: { tickRate: 120 },
+            network: { tickRate: 100 },
             economy: { rewardInterval: 30000 }
         };
 
@@ -95,14 +95,10 @@
 
             loadMap() {
                 const loader = new THREE.GLTFLoader();
-                // CAMINHO AJUSTADO PARA RAIZ (crossroads.glb)
                 loader.load('crossroads.glb', (gltf) => {
                     const model = gltf.scene;
-                    
-                    // Escala 2.5 para um tamanho bom no Crossroads
                     model.scale.set(2.5, 2.5, 2.5); 
                     model.position.set(0, -1.6, 0); 
-                    
                     model.traverse(n => {
                         if (n.isMesh) {
                             n.castShadow = true;
@@ -113,14 +109,10 @@
                             }
                         }
                     });
-                    
                     this.scene.add(model);
-                    console.log("Mundo GLB carregado da raiz!");
                 }, (xhr) => {
                     let p = Math.round((xhr.loaded / xhr.total) * 100);
                     this.updateProgress(85 + (p/10), "GEOMETRY_SYNC_" + p + "%");
-                }, (err) => {
-                    console.error("Erro ao carregar o mapa. Verifique se crossroads.glb está na raiz.", err);
                 });
             }
 
@@ -129,19 +121,15 @@
                 this.scene.background = new THREE.Color(0x000205);
                 this.scene.fog = new THREE.Fog(0x000205, 30, 200);
                 this.camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 2000);
-                
                 this.renderer = new THREE.WebGLRenderer({ antialias: true });
                 this.renderer.setSize(window.innerWidth, window.innerHeight);
                 this.renderer.outputEncoding = THREE.sRGBEncoding;
                 document.body.appendChild(this.renderer.domElement);
-
                 this.scene.add(new THREE.AmbientLight(0xffffff, 1.0));
                 this.scene.add(new THREE.HemisphereLight(0x00f2ff, 0x000000, 0.6));
-                
                 const sun = new THREE.DirectionalLight(0xffffff, 1.2);
                 sun.position.set(20, 100, 20);
                 this.scene.add(sun);
-
                 const grid = new THREE.GridHelper(500, 50, 0x00f2ff, 0x111111);
                 grid.position.y = -1.61;
                 this.scene.add(grid);
@@ -150,21 +138,18 @@
             setupPhysics() {
                 this.world = new CANNON.World();
                 this.world.gravity.set(0, Config.physics.gravity, 0);
-                
                 const groundBody = new CANNON.Body({ mass: 0 });
                 groundBody.addShape(new CANNON.Plane());
                 groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1,0,0), -Math.PI/2);
                 groundBody.position.y = -1.6; 
                 this.world.addBody(groundBody);
-
                 this.player.body = new CANNON.Body({ 
                     mass: 1.5, 
                     shape: new CANNON.Box(new CANNON.Vec3(0.5, 1.5, 0.4)), 
-                    position: new CANNON.Vec3(0, 8, 0), // Spawn alto para evitar prender no chão
+                    position: new CANNON.Vec3(0, 8, 0),
                     fixedRotation: true 
                 });
                 this.world.addBody(this.player.body);
-                
                 this.player.mesh = this.createR6Model(this.player.data.avatar, this.player.username);
                 this.scene.add(this.player.mesh);
             }
@@ -195,12 +180,10 @@
                     this.input.z = -Math.sin(moveAngle) * Config.physics.walkSpeed * (d.distance / 50);
                 });
                 joy.on('end', () => { this.input.x = 0; this.input.z = 0; });
-
                 document.getElementById('jump-btn').addEventListener('touchstart', (e) => {
                     e.preventDefault();
                     if(Math.abs(this.player.body.velocity.y) < 0.5) this.player.body.velocity.y = Config.physics.jumpForce;
                 });
-
                 window.addEventListener('touchstart', (e) => {
                     if (e.target.closest('#joystick-zone') || e.target.closest('#jump-btn')) return;
                     this.touchStart.x = e.touches[0].pageX; this.touchStart.y = e.touches[0].pageY;
@@ -236,10 +219,13 @@
                         this.animateWalking(this.player.mesh, false);
                     }
 
+                    // SINCRONIA SUAVE DOS OUTROS JOGADORES
                     this.entities.forEach(ent => {
-                        ent.position.lerp(ent.userData.targetPos, 0.1);
-                        ent.rotation.y = this.lerpAngle(ent.rotation.y, ent.userData.targetRot, 0.1);
-                        this.animateWalking(ent, ent.position.distanceTo(ent.userData.targetPos) > 0.1);
+                        if(ent.userData.targetPos) {
+                            ent.position.lerp(ent.userData.targetPos, 0.2);
+                            ent.rotation.y = this.lerpAngle(ent.rotation.y, ent.userData.targetRot, 0.2);
+                            this.animateWalking(ent, ent.position.distanceTo(ent.userData.targetPos) > 0.1);
+                        }
                     });
 
                     this.renderer.render(this.scene, this.camera);
@@ -257,17 +243,30 @@
             animateWalking(mesh, active) {
                 const t = Date.now() * 0.012;
                 const p = mesh.userData.parts;
-                if(active) {
+                if(active && p) {
                     p['body-lleg'].rotation.x = Math.sin(t)*0.7; p['body-rleg'].rotation.x = -Math.sin(t)*0.7;
                     p['body-larm'].rotation.x = -Math.sin(t)*0.5; p['body-rarm'].rotation.x = Math.sin(t)*0.5;
-                } else {
+                } else if(p) {
                     Object.values(p).forEach(part => part.rotation.x = THREE.MathUtils.lerp(part.rotation.x, 0, 0.1));
                 }
             }
 
             setupNetwork() {
                 const col = firebase.firestore().collection("online_players");
-                col.doc(this.player.id).set({ name: this.player.username, avatar: this.player.data.avatar || {}, x: 0, y: 5, z: 0, ry: 0, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                
+                // Envio de posição unificado (X, Y, Z)
+                setInterval(() => {
+                    col.doc(this.player.id).set({
+                        name: this.player.username,
+                        avatar: this.player.data.avatar || {},
+                        x: this.player.body.position.x,
+                        y: this.player.body.position.y,
+                        z: this.player.body.position.z,
+                        ry: this.player.mesh.rotation.y,
+                        lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+                }, Config.network.tickRate);
+
                 col.onSnapshot(snap => {
                     snap.docChanges().forEach(change => {
                         const id = change.doc.id; if(id === this.player.id) return;
@@ -275,12 +274,15 @@
                         if(change.type === "added") {
                             const ent = this.createR6Model(data.avatar, data.name);
                             ent.userData.targetPos = new THREE.Vector3(data.x, data.y, data.z);
-                            ent.userData.targetRot = data.ry;
+                            ent.userData.targetRot = data.ry || 0;
                             this.scene.add(ent); this.entities.set(id, ent);
                         }
                         if(change.type === "modified") {
                             const ent = this.entities.get(id);
-                            if(ent) { ent.userData.targetPos.set(data.x, data.y, data.z); ent.userData.targetRot = data.ry; }
+                            if(ent) {
+                                ent.userData.targetPos.set(data.x, data.y, data.z);
+                                ent.userData.targetRot = data.ry || 0;
+                            }
                         }
                         if(change.type === "removed") {
                             const ent = this.entities.get(id);
@@ -289,9 +291,6 @@
                     });
                     document.getElementById('network-stats').innerText = `PLAYERS: ${this.entities.size + 1}`;
                 });
-                setInterval(() => {
-                    col.doc(this.player.id).update({ x: this.player.body.position.x, y: this.player.body.position.y, z: this.player.body.position.z, ry: this.player.mesh.rotation.y, lastSeen: firebase.firestore.FieldValue.serverTimestamp() });
-                }, Config.network.tickRate);
             }
 
             setupRewardSystem() {
