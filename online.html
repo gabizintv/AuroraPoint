@@ -16,7 +16,6 @@
         :root { --primary: #00f2ff; --bg: #000810; }
         body { margin: 0; overflow: hidden; background: var(--bg); touch-action: none; font-family: 'JetBrains Mono', monospace; }
         
-        /* Loading Screen High-End */
         #loading-screen { 
             position: fixed; inset: 0; background: radial-gradient(circle at center, #001a33 0%, #000 100%); 
             display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 10000; 
@@ -26,7 +25,6 @@
         .bar-container { width: 300px; height: 4px; background: rgba(255,255,255,0.05); border-radius: 2px; position: relative; overflow: hidden; border: 1px solid rgba(0, 242, 255, 0.2); }
         #progress-fill { position: absolute; left: 0; top: 0; height: 100%; background: var(--primary); box-shadow: 0 0 15px var(--primary); transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
         
-        /* HUD UI Elements */
         #game-hud { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 1s; }
         #joystick-zone { position: absolute; bottom: 40px; left: 40px; width: 140px; height: 140px; pointer-events: auto; }
         #jump-btn { 
@@ -38,6 +36,12 @@
         .stats-overlay { position: absolute; top: 20px; right: 20px; color: var(--primary); font-size: 10px; text-align: right; pointer-events: none; }
         .exit-btn { position: absolute; top: 20px; left: 20px; pointer-events: auto; background: none; border: 1px solid red; color: red; padding: 5px 15px; cursor: pointer; border-radius: 3px; }
         .exit-btn:hover { background: red; color: white; }
+
+        /* Estilo da Notificação de Tixs */
+        @keyframes slideDown {
+            from { transform: translateX(-50%) translateY(-50px); opacity: 0; }
+            to { transform: translateX(-50%) translateY(0); opacity: 1; }
+        }
     </style>
 </head>
 <body>
@@ -57,10 +61,6 @@
     </div>
 
     <script>
-        /**
-         * AURORA ENGINE CORE CONFIG
-         * Objeto de configuração centralizado para fácil manutenção
-         */
         const Config = {
             firebase: {
                 apiKey: "AIzaSyBvwC0_9DREMFIHFelYuc5RdfXz6bpo1JA",
@@ -71,13 +71,10 @@
                 appId: "1:324340380415:web:468fcca5188b539682d2ca"
             },
             physics: { gravity: -35, jumpForce: 16, walkSpeed: 13, lerpFactor: 0.18 },
-            network: { tickRate: 120, cleanupInterval: 10000 }
+            network: { tickRate: 120, cleanupInterval: 10000 },
+            economy: { rewardInterval: 30000 } // 30 segundos
         };
 
-        /**
-         * ENGINE STATE CLASS
-         * Gerencia toda a lógica de vida do jogo
-         */
         class AuroraEngine {
             constructor() {
                 this.scene = null;
@@ -88,7 +85,6 @@
                 this.player = { body: null, mesh: null, id: null, username: "Guest" };
                 this.entities = new Map();
                 this.input = { x: 0, z: 0 };
-                this.isReady = false;
             }
 
             async init() {
@@ -107,7 +103,10 @@
                     this.setupGraphics();
                     this.setupPhysics();
 
-                    this.updateProgress(80, "NETWORK_LISTENER_START");
+                    this.updateProgress(70, "ECONOMY_KERNEL_START");
+                    this.setupRewardSystem(); // INICIA O GANHO DE TIXS
+
+                    this.updateProgress(85, "NETWORK_LISTENER_START");
                     this.setupNetwork();
                     this.setupControls();
 
@@ -116,6 +115,47 @@
                 } catch (e) {
                     console.error("CRITICAL_BOOT_FAILURE", e);
                 }
+            }
+
+            // --- SISTEMA DE RECOMPENSA (NOVA FUNÇÃO) ---
+            setupRewardSystem() {
+                setInterval(async () => {
+                    if (!this.player.id) return;
+                    const userRef = firebase.firestore().collection("users").doc(this.player.id);
+
+                    try {
+                        await firebase.firestore().runTransaction(async (transaction) => {
+                            const userDoc = await transaction.get(userRef);
+                            if (!userDoc.exists) return;
+
+                            const newTixCount = (userDoc.data().tixs || 0) + 1;
+                            transaction.update(userRef, { tixs: newTixCount });
+                            
+                            this.showNotification(`+1 TIX RECEBIDO!`);
+                        });
+                    } catch (err) {
+                        console.warn("Erro ao processar Tix:", err);
+                    }
+                }, Config.economy.rewardInterval);
+            }
+
+            showNotification(msg) {
+                const notify = document.createElement('div');
+                notify.style.cssText = `
+                    position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
+                    background: rgba(0, 242, 255, 0.2); color: #00f2ff; 
+                    padding: 12px 30px; border-radius: 20px; border: 1px solid #00f2ff;
+                    font-family: 'JetBrains Mono', monospace; font-weight: bold;
+                    backdrop-filter: blur(10px); z-index: 10000; pointer-events: none;
+                    box-shadow: 0 0 20px rgba(0, 242, 255, 0.4); animation: slideDown 0.5s ease-out;
+                `;
+                notify.innerText = msg;
+                document.body.appendChild(notify);
+                setTimeout(() => {
+                    notify.style.transition = "opacity 1s";
+                    notify.style.opacity = "0";
+                    setTimeout(() => notify.remove(), 1000);
+                }, 3000);
             }
 
             getAuth() {
@@ -141,58 +181,35 @@
                 this.scene = new THREE.Scene();
                 this.scene.background = new THREE.Color(0x000205);
                 this.scene.fog = new THREE.Fog(0x000205, 10, 100);
-
                 this.camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-                
                 this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
                 this.renderer.setSize(window.innerWidth, window.innerHeight);
                 this.renderer.shadowMap.enabled = true;
-                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
                 document.body.appendChild(this.renderer.domElement);
 
-                // Lighting System
-                const amb = new THREE.AmbientLight(0x404040, 0.5);
-                this.scene.add(amb);
-
+                this.scene.add(new THREE.AmbientLight(0x404040, 0.5));
                 const sun = new THREE.DirectionalLight(0xffffff, 1);
                 sun.position.set(20, 50, 20);
                 sun.castShadow = true;
-                sun.shadow.camera.left = -50;
-                sun.shadow.camera.right = 50;
                 this.scene.add(sun);
 
-                // Advanced Ground
-                const groundGeo = new THREE.PlaneGeometry(200, 200);
-                const groundMat = new THREE.MeshPhongMaterial({ color: 0x111111, shininess: 10 });
-                const ground = new THREE.Mesh(groundGeo, groundMat);
+                const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshPhongMaterial({ color: 0x111111 }));
                 ground.rotation.x = -Math.PI/2;
                 ground.receiveShadow = true;
                 this.scene.add(ground);
-
-                const grid = new THREE.GridHelper(200, 50, 0x00f2ff, 0x001122);
-                grid.position.y = 0.01;
-                this.scene.add(grid);
+                this.scene.add(new THREE.GridHelper(200, 50, 0x00f2ff, 0x001122));
             }
 
             setupPhysics() {
                 this.world = new CANNON.World();
                 this.world.gravity.set(0, Config.physics.gravity, 0);
-
                 const groundBody = new CANNON.Body({ mass: 0 });
                 groundBody.addShape(new CANNON.Plane());
                 groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1,0,0), -Math.PI/2);
                 this.world.addBody(groundBody);
 
-                // Player Physics Body
-                this.player.body = new CANNON.Body({
-                    mass: 1.5,
-                    shape: new CANNON.Box(new CANNON.Vec3(0.5, 1.5, 0.4)),
-                    position: new CANNON.Vec3(0, 5, 0),
-                    fixedRotation: true
-                });
+                this.player.body = new CANNON.Body({ mass: 1.5, shape: new CANNON.Box(new CANNON.Vec3(0.5, 1.5, 0.4)), position: new CANNON.Vec3(0, 5, 0), fixedRotation: true });
                 this.world.addBody(this.player.body);
-
-                // Visual Representation
                 this.player.mesh = this.createR6Model(this.player.data.avatar, this.player.username);
                 this.scene.add(this.player.mesh);
             }
@@ -201,7 +218,6 @@
                 const group = new THREE.Group();
                 const parts = {};
                 const matConf = (c) => new THREE.MeshPhongMaterial({ color: c || 0x00f2ff });
-
                 const add = (w,h,d, x,y,z, id) => {
                     const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), matConf(colors[id]));
                     m.position.set(x,y,z);
@@ -209,37 +225,24 @@
                     group.add(m);
                     parts[id] = m;
                 };
-
                 add(0.6, 0.6, 0.6, 0, 1.3, 0, 'body-head');
                 add(0.9, 1.2, 0.5, 0, 0.4, 0, 'body-torso');
                 add(0.4, 1.1, 0.4, -0.7, 0.4, 0, 'body-larm');
                 add(0.4, 1.1, 0.4, 0.7, 0.4, 0, 'body-rarm');
                 add(0.45, 1.1, 0.45, -0.25, -0.8, 0, 'body-lleg');
                 add(0.45, 1.1, 0.45, 0.25, -0.8, 0, 'body-rleg');
-
                 group.userData.parts = parts;
                 return group;
             }
 
             setupNetwork() {
-                const db = firebase.firestore();
-                const col = db.collection("online_players");
-
-                // Heartbeat / Registration
-                col.doc(this.player.id).set({
-                    name: this.player.username,
-                    avatar: this.player.data.avatar || {},
-                    x: 0, y: 5, z: 0, ry: 0,
-                    lastSeen: firebase.firestore.FieldValue.serverTimestamp()
-                }, { merge: true });
-
-                // Synchronized Snapshot
+                const col = firebase.firestore().collection("online_players");
+                col.doc(this.player.id).set({ name: this.player.username, avatar: this.player.data.avatar || {}, x: 0, y: 5, z: 0, ry: 0, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
                 col.onSnapshot(snap => {
                     snap.docChanges().forEach(change => {
                         const id = change.doc.id;
                         const data = change.doc.data();
                         if(id === this.player.id) return;
-
                         if(change.type === "added") {
                             const ent = this.createR6Model(data.avatar, data.name);
                             ent.userData.targetPos = new THREE.Vector3(data.x, data.y, data.z);
@@ -249,10 +252,7 @@
                         }
                         if(change.type === "modified") {
                             const ent = this.entities.get(id);
-                            if(ent) {
-                                ent.userData.targetPos.set(data.x, data.y, data.z);
-                                ent.userData.targetRot = data.ry;
-                            }
+                            if(ent) { ent.userData.targetPos.set(data.x, data.y, data.z); ent.userData.targetRot = data.ry; }
                         }
                         if(change.type === "removed") {
                             const ent = this.entities.get(id);
@@ -261,78 +261,50 @@
                     });
                     document.getElementById('network-stats').innerText = `PLAYERS: ${this.entities.size + 1}`;
                 });
-
-                // Network Transmission Loop
                 setInterval(() => {
-                    col.doc(this.player.id).update({
-                        x: this.player.body.position.x,
-                        y: this.player.body.position.y,
-                        z: this.player.body.position.z,
-                        ry: this.player.mesh.rotation.y,
-                        lastSeen: firebase.firestore.FieldValue.serverTimestamp()
-                    }).catch(() => {});
+                    col.doc(this.player.id).update({ x: this.player.body.position.x, y: this.player.body.position.y, z: this.player.body.position.z, ry: this.player.mesh.rotation.y, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
                 }, Config.network.tickRate);
             }
 
             setupControls() {
-                const zone = document.getElementById('joystick-zone');
-                const joy = nipplejs.create({ zone, mode: 'static', position: {left: '70px', bottom: '70px'}, color: '#00f2ff' });
-                
+                const joy = nipplejs.create({ zone: document.getElementById('joystick-zone'), mode: 'static', position: {left: '70px', bottom: '70px'}, color: '#00f2ff' });
                 joy.on('move', (e, d) => {
                     const power = d.distance / 50;
                     this.input.x = Math.cos(d.angle.radian) * Config.physics.walkSpeed * power;
                     this.input.z = -Math.sin(d.angle.radian) * Config.physics.walkSpeed * power;
                 });
                 joy.on('end', () => { this.input.x = 0; this.input.z = 0; });
-
                 document.getElementById('jump-btn').addEventListener('touchstart', (e) => {
                     e.preventDefault();
-                    if(Math.abs(this.player.body.velocity.y) < 0.5) {
-                        this.player.body.velocity.y = Config.physics.jumpForce;
-                    }
+                    if(Math.abs(this.player.body.velocity.y) < 0.5) this.player.body.velocity.y = Config.physics.jumpForce;
                 });
             }
 
             startLoop() {
                 const animate = () => {
                     requestAnimationFrame(animate);
-                    const dt = this.clock.getDelta();
-                    
-                    this.updatePhysics(dt);
-                    this.updateEntities();
-                    this.updateCamera();
-                    
+                    this.world.step(1/60);
+                    this.player.mesh.position.copy(this.player.body.position);
+                    if(Math.abs(this.input.x) > 0.1 || Math.abs(this.input.z) > 0.1) {
+                        this.player.body.velocity.x = this.input.x;
+                        this.player.body.velocity.z = this.input.z;
+                        this.player.mesh.rotation.y = this.lerpAngle(this.player.mesh.rotation.y, Math.atan2(this.input.x, this.input.z), Config.physics.lerpFactor);
+                        this.animateWalking(this.player.mesh, true);
+                    } else {
+                        this.player.body.velocity.x *= 0.85; this.player.body.velocity.z *= 0.85;
+                        this.animateWalking(this.player.mesh, false);
+                    }
+                    this.entities.forEach(ent => {
+                        ent.position.lerp(ent.userData.targetPos, 0.15);
+                        ent.rotation.y = this.lerpAngle(ent.rotation.y, ent.userData.targetRot, 0.15);
+                        this.animateWalking(ent, ent.position.distanceTo(ent.userData.targetPos) > 0.1);
+                    });
+                    const camOff = new THREE.Vector3(0, 8, 14);
+                    this.camera.position.lerp(this.player.mesh.position.clone().add(camOff), 0.1);
+                    this.camera.lookAt(this.player.mesh.position);
                     this.renderer.render(this.scene, this.camera);
                 };
                 animate();
-            }
-
-            updatePhysics(dt) {
-                this.world.step(1/60);
-                this.player.mesh.position.copy(this.player.body.position);
-
-                if(Math.abs(this.input.x) > 0.1 || Math.abs(this.input.z) > 0.1) {
-                    this.player.body.velocity.x = this.input.x;
-                    this.player.body.velocity.z = this.input.z;
-                    
-                    const angle = Math.atan2(this.input.x, this.input.z);
-                    this.player.mesh.rotation.y = this.lerpAngle(this.player.mesh.rotation.y, angle, Config.physics.lerpFactor);
-                    this.animateWalking(this.player.mesh, true);
-                } else {
-                    this.player.body.velocity.x *= 0.85;
-                    this.player.body.velocity.z *= 0.85;
-                    this.animateWalking(this.player.mesh, false);
-                }
-            }
-
-            updateEntities() {
-                this.entities.forEach(ent => {
-                    ent.position.lerp(ent.userData.targetPos, 0.15);
-                    ent.rotation.y = this.lerpAngle(ent.rotation.y, ent.userData.targetRot, 0.15);
-                    
-                    const dist = ent.position.distanceTo(ent.userData.targetPos);
-                    this.animateWalking(ent, dist > 0.1);
-                });
             }
 
             lerpAngle(a, b, t) {
@@ -346,43 +318,24 @@
                 const t = Date.now() * 0.012;
                 const p = mesh.userData.parts;
                 if(active) {
-                    p['body-lleg'].rotation.x = Math.sin(t) * 0.7;
-                    p['body-rleg'].rotation.x = -Math.sin(t) * 0.7;
-                    p['body-larm'].rotation.x = -Math.sin(t) * 0.5;
-                    p['body-rarm'].rotation.x = Math.sin(t) * 0.5;
+                    p['body-lleg'].rotation.x = Math.sin(t) * 0.7; p['body-rleg'].rotation.x = -Math.sin(t) * 0.7;
+                    p['body-larm'].rotation.x = -Math.sin(t) * 0.5; p['body-rarm'].rotation.x = Math.sin(t) * 0.5;
                 } else {
-                    Object.values(p).forEach(part => {
-                        part.rotation.x = THREE.MathUtils.lerp(part.rotation.x, 0, 0.1);
-                    });
+                    Object.values(p).forEach(part => part.rotation.x = THREE.MathUtils.lerp(part.rotation.x, 0, 0.1));
                 }
             }
-
-            updateCamera() {
-                const offset = new THREE.Vector3(0, 8, 14);
-                const targetPos = this.player.mesh.position.clone().add(offset);
-                this.camera.position.lerp(targetPos, 0.1);
-                this.camera.lookAt(this.player.mesh.position);
-            }
         }
 
-        /**
-         * GLOBAL DISCONNECT
-         */
         async function exitGame() {
             try {
-                const uid = firebase.auth().currentUser.uid;
-                await firebase.firestore().collection("online_players").doc(uid).delete();
+                await firebase.firestore().collection("online_players").doc(firebase.auth().currentUser.uid).delete();
                 window.location.replace('home.html');
-            } catch(e) {
-                window.location.href = 'home.html';
-            }
+            } catch(e) { window.location.href = 'home.html'; }
         }
 
-        // Initialize Engine
         const Game = new AuroraEngine();
         window.onload = () => Game.init();
         window.onbeforeunload = () => exitGame();
-
     </script>
 </body>
 </html>

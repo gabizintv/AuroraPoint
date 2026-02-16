@@ -18,10 +18,11 @@
         }
         .user-stats { font-size: 13px; font-weight: bold; text-align: right; }
         .stat-line { color: #FFD700; font-size: 14px; }
+        /* Brilho neon suave para os Tixs */
+        #user-tix { color: #00f2ff; text-shadow: 0 0 5px rgba(0,242,255,0.5); }
 
         .container { padding: 25px; display: flex; flex-direction: column; align-items: center; gap: 20px; width: 100%; }
         
-        /* CARD ORIGINAL */
         .card { background: white; border: 1px solid #CCC; padding: 15px; border-radius: 12px; width: 100%; max-width: 320px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
         .card img { width: 100%; border-radius: 8px; margin-bottom: 12px; border: 1px solid #EEE; }
         .card-title { display: block; font-weight: bold; margin-bottom: 8px; color: #003366; font-size: 20px; }
@@ -38,7 +39,7 @@
         <img src="https://i.postimg.cc/jScG67Yr/Design-sem-nome(1).png" width="70">
         <div class="user-stats">
             <div id="display-name" style="font-size: 15px; margin-bottom: 4px;">Olá, Jogador</div>
-            <div class="stat-line">🎟️ <span id="user-tickets">0</span> | ⭐ <span id="user-points">0</span></div>
+            <div class="stat-line">🎟️ <span id="user-tix">0</span> | ⭐ <span id="user-points">0</span></div>
         </div>
     </header>
 
@@ -51,7 +52,7 @@
 
         <div class="card">
             <span class="card-title">Menu do Jogador</span>
-            <button class="btn-blue" onclick="location.href='catalog.html'">EDITAR MEU AVATAR</button>
+            <button class="btn-blue" onclick="location.href='catalog.html'">CATÁLOGO & AVATAR</button>
         </div>
 
         <button class="btn-logout" onclick="logout()">Sair da Conta</button>
@@ -71,14 +72,22 @@
         const db = firebase.firestore();
 
         auth.onAuthStateChanged(user => {
-            if (!user) { window.location.href = 'index.html'; }
-            else {
-                db.collection("users").doc(user.uid).get().then(doc => {
+            if (!user) { 
+                window.location.href = 'index.html'; 
+            } else {
+                const userRef = db.collection("users").doc(user.uid);
+
+                // LISTENER EM TEMPO REAL (onSnapshot)
+                // Isso faz com que os Tixs aumentem na tela assim que o servidor liberar
+                userRef.onSnapshot((doc) => {
                     if (doc.exists) {
-                        document.getElementById('display-name').innerText = "Olá, " + (doc.data().username || "Jogador");
-                        document.getElementById('user-tickets').innerText = doc.data().tickets || 0;
-                        document.getElementById('user-points').innerText = doc.data().points || 0;
+                        const data = doc.data();
+                        document.getElementById('display-name').innerText = "Olá, " + (data.username || "Jogador");
+                        document.getElementById('user-tix').innerText = data.tixs || 0; // Nome corrigido para tixs
+                        document.getElementById('user-points').innerText = data.points || 0;
                     }
+                }, error => {
+                    console.error("Erro ao escutar mudanças:", error);
                 });
             }
         });
