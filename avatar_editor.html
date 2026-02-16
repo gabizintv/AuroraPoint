@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aurora | Editor de Membros</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        :root { --accent: #00f2ff; --bg: #050a10; --panel: #0d141d; }
+        
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; display: flex; height: 100vh; overflow: hidden; }
+
+        /* Painel Lateral com Transição */
+        #editor-ui { 
+            width: 350px; 
+            background: var(--panel); 
+            border-right: 1px solid rgba(0,242,255,0.2); 
+            display: flex; 
+            flex-direction: column; 
+            z-index: 10;
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+
+        /* Classe para esconder o painel */
+        #editor-ui.minimized { transform: translateX(-350px); }
+
+        /* Botão Minimizar/Maximizar */
+        #toggle-panel {
+            position: absolute;
+            right: -30px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 30px;
+            height: 60px;
+            background: var(--panel);
+            border: 1px solid rgba(0,242,255,0.2);
+            border-left: none;
+            color: var(--accent);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0 8px 8px 0;
+            font-weight: bold;
+        }
+
+        .header { padding: 25px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .section-title { font-size: 10px; color: rgba(255,255,255,0.4); text-transform: uppercase; margin: 20px 0 10px 20px; display: block; }
+        
+        .member-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 0 20px; }
+        .btn-part { background: #151c26; border: 1px solid #2a3544; color: #ccc; padding: 8px; cursor: pointer; border-radius: 4px; font-size: 10px; }
+        .btn-part.active { border-color: var(--accent); background: rgba(0,242,255,0.1); color: var(--accent); }
+
+        .color-scroll { flex: 1; overflow-y: auto; padding: 0 20px; margin-top: 10px; }
+        .color-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; padding-bottom: 30px; }
+        .color-node { width: 100%; aspect-ratio: 1; border-radius: 3px; cursor: pointer; border: 1px solid rgba(0,0,0,0.5); }
+
+        /* Viewport ocupa a tela toda por baixo */
+        #viewport { 
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 100vw;
+            height: 100vh;
+            background: radial-gradient(circle at center, #001a33 0%, #000 100%);
+        }
+
+        .footer { padding: 20px; background: rgba(0,0,0,0.4); display: flex; gap: 8px; }
+        .btn-save { flex: 2; background: var(--accent); border: none; padding: 12px; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 11px; }
+        .btn-exit { flex: 1; background: none; border: 1px solid #444; color: #888; padding: 12px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+    </style>
+</head>
+<body>
+
+    <div id="viewport"></div>
+
+    <div id="editor-ui">
+        <button id="toggle-panel" onclick="toggleMenu()">◄</button>
+        
+        <div class="header">
+            <h2 style="margin:0; color:var(--accent); font-size: 1.1rem;">AVATAR EDITOR</h2>
+        </div>
+
+        <div style="overflow-y: auto; flex: 1;">
+            <span class="section-title">MÓDULOS</span>
+            <div class="member-grid">
+                <button class="btn-part active" onclick="selectPart('all', this)">CORPO INTEIRO</button>
+                <button class="btn-part" onclick="selectPart('body-head', this)">CABEÇA</button>
+                <button class="btn-part" onclick="selectPart('body-torso', this)">TRONCO</button>
+                <button class="btn-part" onclick="selectPart('body-larm', this)">B. ESQUERDO</button>
+                <button class="btn-part" onclick="selectPart('body-rarm', this)">B. DIREITO</button>
+                <button class="btn-part" onclick="selectPart('body-lleg', this)">P. ESQUERDA</button>
+                <button class="btn-part" onclick="selectPart('body-rleg', this)">P. DIREITA</button>
+            </div>
+
+            <span class="section-title">CORES DISPONÍVEIS</span>
+            <div class="color-scroll">
+                <div class="color-grid" id="palette-container"></div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <button class="btn-exit" onclick="location.href='catalog.html'">VOLTAR</button>
+            <button class="btn-save" onclick="saveData()">SALVAR</button>
+        </div>
+    </div>
+
+    <script>
+        // Configuração Firebase e Funções permanecem iguais
+        const firebaseConfig = {
+            apiKey: "AIzaSyBvwC0_9DREMFIHFelYuc5RdfXz6bpo1JA",
+            authDomain: "aurorapoint-a8a1e.firebaseapp.com",
+            projectId: "aurorapoint-a8a1e",
+            storageBucket: "aurorapoint-a8a1e.firebasestorage.app",
+            messagingSenderId: "324340380415",
+            appId: "1:324340380415:web:468fcca5188b539682d2ca"
+        };
+        firebase.initializeApp(firebaseConfig);
+
+        const PALETTE = {
+            "Vermelho": "#FF0000", "Carmesim": "#DC143C", "Escarlate": "#FF2400", "Vinho": "#722F37", "Rosa": "#FFC0CB", "Magenta": "#FF00FF", "Choque": "#FC0FC0", "Salmão": "#FA8072", "Coral": "#FF7F50", "Cereja": "#DE3163",
+            "Laranja": "#FFA500", "Âmbar": "#FFBF00", "Cenoura": "#ED9121", "Amarelo": "#FFFF00", "Dourado": "#FFD700", "Creme": "#FFFDD0", "Marfim": "#FFFFF0", "Mostarda": "#FFDB58", "Girassol": "#FFDA03", "Milho": "#FBEC5D",
+            "Verde": "#008000", "Lima": "#00FF00", "Esmeralda": "#50C878", "Oliva": "#808000", "Musgo": "#8A9A5B", "Militar": "#4B5320", "Menta": "#98FF98", "Jade": "#00A86B", "Pistache": "#93C572", "Floresta": "#228B22",
+            "Azul": "#0000FF", "Celeste": "#87CEEB", "Marinho": "#000080", "Turquesa": "#40E0D0", "Ciano": "#00FFFF", "Anil": "#4B0082", "Roxo": "#800080", "Violeta": "#8F00FF", "Lilás": "#C8A2C8", "Lavanda": "#E6E6FA",
+            "Marrom": "#8B4513", "Bege": "#F5F5DC", "Chocolate": "#D2691E", "Café": "#4B3621", "Cinza": "#808080", "Prata": "#C0C0C0", "Chumbo": "#333333", "Preto": "#000000", "Branco": "#FFFFFF", "Grafite": "#41424C"
+        };
+
+        let selectedPart = 'all';
+        let avatarColors = { "body-head": "#f1f10e", "body-torso": "#00f2ff", "body-larm": "#00f2ff", "body-rarm": "#00f2ff", "body-lleg": "#00f2ff", "body-rleg": "#00f2ff" };
+        let scene, camera, renderer, parts3D = {};
+
+        function toggleMenu() {
+            const panel = document.getElementById('editor-ui');
+            const btn = document.getElementById('toggle-panel');
+            panel.classList.toggle('minimized');
+            btn.innerText = panel.classList.contains('minimized') ? '►' : '◄';
+        }
+
+        function init() {
+            const container = document.getElementById('palette-container');
+            Object.entries(PALETTE).forEach(([name, hex]) => {
+                const node = document.createElement('div');
+                node.className = 'color-node';
+                node.style.backgroundColor = hex;
+                node.onclick = () => paint(hex);
+                container.appendChild(node);
+            });
+            init3D();
+            loadUserData();
+        }
+
+        function init3D() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 0.5, 7.5);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('viewport').appendChild(renderer.domElement);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 1));
+            
+            const group = new THREE.Group();
+            const make = (w, h, d, x, y, z, id) => {
+                const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshPhongMaterial({ color: 0xcccccc }));
+                m.position.set(x, y, z);
+                group.add(m);
+                parts3D[id] = m;
+            };
+            make(0.7, 0.7, 0.7, 0, 1.4, 0, 'body-head');
+            make(1.0, 1.3, 0.6, 0, 0.4, 0, 'body-torso');
+            make(0.45, 1.2, 0.45, -0.75, 0.4, 0, 'body-larm');
+            make(0.45, 1.2, 0.45, 0.75, 0.4, 0, 'body-rarm');
+            make(0.5, 1.2, 0.5, -0.3, -0.85, 0, 'body-lleg');
+            make(0.5, 1.2, 0.5, 0.3, -0.85, 0, 'body-rleg');
+            scene.add(group);
+
+            function animate() {
+                requestAnimationFrame(animate);
+                group.rotation.y += 0.01;
+                renderer.render(scene, camera);
+            }
+            animate();
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        async function loadUserData() {
+            firebase.auth().onAuthStateChanged(async user => {
+                if(user) {
+                    const doc = await firebase.firestore().collection("users").doc(user.uid).get();
+                    if(doc.exists && doc.data().avatar) {
+                        avatarColors = doc.data().avatar;
+                        updatePreview();
+                    }
+                }
+            });
+        }
+
+        function selectPart(part, btn) {
+            selectedPart = part;
+            document.querySelectorAll('.btn-part').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        function paint(hex) {
+            if(selectedPart === 'all') {
+                Object.keys(avatarColors).forEach(k => avatarColors[k] = hex);
+            } else {
+                avatarColors[selectedPart] = hex;
+            }
+            updatePreview();
+        }
+
+        function updatePreview() {
+            Object.keys(parts3D).forEach(id => {
+                if(avatarColors[id]) parts3D[id].material.color.set(avatarColors[id]);
+            });
+        }
+
+        async function saveData() {
+            const user = firebase.auth().currentUser;
+            if(user) {
+                await firebase.firestore().collection("users").doc(user.uid).update({ avatar: avatarColors });
+                alert("Avatar Salvo!");
+            }
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>

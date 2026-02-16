@@ -35,20 +35,25 @@
         .item-card.owned { border-color: #444; opacity: 0.8; }
         .item-card.equipped { border-color: #00ff00; box-shadow: 0 0 10px rgba(0,255,0,0.2); }
 
-        .btn-back { background: none; border: 1px solid var(--accent); color: var(--accent); padding: 8px 15px; cursor: pointer; border-radius: 4px; }
+        .btn-group { display: flex; gap: 10px; }
+        .btn-back { background: none; border: 1px solid #666; color: #ccc; padding: 8px 15px; cursor: pointer; border-radius: 4px; }
+        .btn-advanced { background: var(--accent); border: none; color: black; padding: 8px 15px; cursor: pointer; border-radius: 4px; font-weight: bold; box-shadow: 0 0 10px rgba(0,242,255,0.3); }
+        .btn-advanced:hover { filter: brightness(1.2); }
     </style>
 </head>
 <body>
 
     <header>
-        <button class="btn-back" onclick="location.href='home.html'">< VOLTAR</button>
+        <div class="btn-group">
+            <button class="btn-back" onclick="location.href='home.html'">< VOLTAR</button>
+            <button class="btn-advanced" onclick="location.href='avatar_editor.html'">🎨 OPÇÕES AVANÇADAS</button>
+        </div>
         <div id="tix-display">TIXS: --</div>
     </header>
 
     <main>
         <div id="preview-container"></div>
-        <div id="shop-container">
-            </div>
+        <div id="shop-container"></div>
     </main>
 
     <script>
@@ -61,7 +66,6 @@
             appId: "1:324340380415:web:468fcca5188b539682d2ca"
         };
 
-        // Database de Itens baseada na sua imagem
         const ITEM_DATABASE = [
             { id: 'mask_admin', name: 'Sorriso Adm', type: 'mask', price: 50, img: 'https://cdn-icons-png.flaticon.com/512/1023/1023656.png' },
             { id: 'hat_blue', name: 'Chapéu Azul', type: 'hat', price: 30, img: 'https://cdn-icons-png.flaticon.com/512/1051/1051167.png' },
@@ -79,14 +83,20 @@
             
             firebase.auth().onAuthStateChanged(async user => {
                 if (user) {
-                    const doc = await firebase.firestore().collection("users").doc(user.uid).get();
-                    if (doc.exists) {
-                        userData = { ...userData, ...doc.data() };
-                        if (!userData.inventory) userData.inventory = [];
-                        if (!userData.equipped) userData.equipped = {};
-                    }
-                    updateUI();
-                    init3D();
+                    const userRef = firebase.firestore().collection("users").doc(user.uid);
+                    
+                    // Snapshot em tempo real para os Tixs e Inventário
+                    userRef.onSnapshot(doc => {
+                        if (doc.exists) {
+                            userData = { ...userData, ...doc.data() };
+                            if (!userData.inventory) userData.inventory = [];
+                            if (!userData.equipped) userData.equipped = {};
+                            
+                            updateUI();
+                            if (!scene) init3D();
+                            else updateAvatarColors();
+                        }
+                    });
                 } else {
                     window.location.href = 'index.html';
                 }
@@ -102,13 +112,11 @@
             renderer.setSize(window.innerWidth * 0.4, window.innerHeight);
             document.getElementById('preview-container').appendChild(renderer.domElement);
 
-            const light = new THREE.AmbientLight(0xffffff, 0.8);
-            scene.add(light);
+            scene.add(new THREE.AmbientLight(0xffffff, 0.8));
             const directional = new THREE.DirectionalLight(0xffffff, 0.5);
             directional.position.set(2, 5, 2);
             scene.add(directional);
 
-            // Criar o boneco R6 de preview
             avatarMesh = createR6Preview(userData.avatar);
             scene.add(avatarMesh);
 
@@ -122,18 +130,31 @@
 
         function createR6Preview(colors = {}) {
             const group = new THREE.Group();
-            const make = (w, h, d, x, y, z, col) => {
-                const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshPhongMaterial({ color: col || 0xf1f10e }));
+            const parts = {};
+            const make = (w, h, d, x, y, z, id) => {
+                const col = (colors && colors[id]) ? colors[id] : 0xf1f10e;
+                const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshPhongMaterial({ color: col }));
                 m.position.set(x, y, z);
                 group.add(m);
+                parts[id] = m;
             };
-            make(0.6, 0.6, 0.6, 0, 1.3, 0, colors['body-head']);
-            make(0.9, 1.2, 0.5, 0, 0.4, 0, colors['body-torso']);
-            make(0.4, 1.1, 0.4, -0.7, 0.4, 0, colors['body-larm']);
-            make(0.4, 1.1, 0.4, 0.7, 0.4, 0, colors['body-rarm']);
-            make(0.45, 1.1, 0.45, -0.25, -0.8, 0, colors['body-lleg']);
-            make(0.45, 1.1, 0.45, 0.25, -0.8, 0, colors['body-rleg']);
+            make(0.6, 0.6, 0.6, 0, 1.3, 0, 'body-head');
+            make(0.9, 1.2, 0.5, 0, 0.4, 0, 'body-torso');
+            make(0.4, 1.1, 0.4, -0.7, 0.4, 0, 'body-larm');
+            make(0.4, 1.1, 0.4, 0.7, 0.4, 0, 'body-rarm');
+            make(0.45, 1.1, 0.45, -0.25, -0.8, 0, 'body-lleg');
+            make(0.45, 1.1, 0.45, 0.25, -0.8, 0, 'body-rleg');
+            group.userData.parts = parts;
             return group;
+        }
+
+        function updateAvatarColors() {
+            if (!avatarMesh) return;
+            const colors = userData.avatar || {};
+            const parts = avatarMesh.userData.parts;
+            Object.keys(parts).forEach(id => {
+                if (colors[id]) parts[id].material.color.set(colors[id]);
+            });
         }
 
         function updateUI() {
@@ -150,7 +171,7 @@
                 card.innerHTML = `
                     <img src="${item.img}">
                     <h3>${item.name}</h3>
-                    <div class="price">${isOwned ? 'POSSUÍDO' : item.price + ' TIXS'}</div>
+                    <div class="price">${isOwned ? (isEquipped ? 'EQUIPADO' : 'EQUIPAR') : item.price + ' TIXS'}</div>
                 `;
                 card.onclick = () => handleItemAction(item);
                 container.appendChild(card);
@@ -162,7 +183,6 @@
             const userRef = firebase.firestore().collection("users").doc(uid);
 
             if (userData.inventory.includes(item.id)) {
-                // Alternar Equipar/Desequipar
                 if (userData.equipped[item.type] === item.id) {
                     delete userData.equipped[item.type];
                 } else {
@@ -170,20 +190,15 @@
                 }
                 await userRef.update({ equipped: userData.equipped });
             } else {
-                // Comprar Item
                 if (userData.tixs >= item.price) {
-                    userData.tixs -= item.price;
-                    userData.inventory.push(item.id);
                     await userRef.update({ 
-                        tixs: userData.tixs, 
-                        inventory: userData.inventory 
+                        tixs: firebase.firestore.FieldValue.increment(-item.price),
+                        inventory: firebase.firestore.FieldValue.arrayUnion(item.id)
                     });
-                    alert(`Você comprou: ${item.name}!`);
                 } else {
                     alert("Tixs insuficientes!");
                 }
             }
-            updateUI();
         }
 
         init();
