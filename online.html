@@ -26,7 +26,6 @@
         #jump-btn { position: absolute; bottom: 60px; right: 50px; width: 80px; height: 80px; background: rgba(0, 242, 255, 0.1); border: 2px solid var(--primary); border-radius: 50%; pointer-events: auto; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; backdrop-filter: blur(5px); box-shadow: 0 0 20px rgba(0, 242, 255, 0.2); }
         .stats-overlay { position: absolute; top: 20px; right: 20px; color: var(--primary); font-size: 10px; text-align: right; pointer-events: none; }
         .exit-btn { position: absolute; top: 20px; left: 20px; pointer-events: auto; background: none; border: 1px solid red; color: red; padding: 5px 15px; cursor: pointer; border-radius: 3px; }
-        @keyframes slideDown { from { transform: translateX(-50%) translateY(-50px); opacity: 0; } to { transform: translateX(-50%) translateY(0); opacity: 1; } }
     </style>
 </head>
 <body>
@@ -96,54 +95,55 @@
 
             loadMap() {
                 const loader = new THREE.GLTFLoader();
-                // Ajustado para o caminho relativo correto conforme suas imagens
-                loader.load('assets/crossroads.glb', (gltf) => {
+                // CAMINHO AJUSTADO PARA RAIZ (crossroads.glb)
+                loader.load('crossroads.glb', (gltf) => {
                     const model = gltf.scene;
                     
-                    // Escala aumentada e posição ajustada para ficar sob os pés (Y = -1.6)
-                    model.scale.set(2, 2, 2); 
+                    // Escala 2.5 para um tamanho bom no Crossroads
+                    model.scale.set(2.5, 2.5, 2.5); 
                     model.position.set(0, -1.6, 0); 
                     
                     model.traverse(n => {
                         if (n.isMesh) {
                             n.castShadow = true;
                             n.receiveShadow = true;
-                            if(n.material) n.material.metalness = 0.1;
+                            if(n.material) {
+                                n.material.metalness = 0;
+                                n.material.roughness = 0.8;
+                            }
                         }
                     });
                     
                     this.scene.add(model);
-                    console.log("Mapa Crossroads carregado abaixo dos players!");
+                    console.log("Mundo GLB carregado da raiz!");
                 }, (xhr) => {
                     let p = Math.round((xhr.loaded / xhr.total) * 100);
                     this.updateProgress(85 + (p/10), "GEOMETRY_SYNC_" + p + "%");
                 }, (err) => {
-                    console.error("Erro ao carregar o mapa. Verifique o nome do arquivo.", err);
+                    console.error("Erro ao carregar o mapa. Verifique se crossroads.glb está na raiz.", err);
                 });
             }
 
             setupGraphics() {
                 this.scene = new THREE.Scene();
                 this.scene.background = new THREE.Color(0x000205);
-                this.scene.fog = new THREE.Fog(0x000205, 30, 150);
-                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+                this.scene.fog = new THREE.Fog(0x000205, 30, 200);
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 2000);
                 
                 this.renderer = new THREE.WebGLRenderer({ antialias: true });
                 this.renderer.setSize(window.innerWidth, window.innerHeight);
                 this.renderer.outputEncoding = THREE.sRGBEncoding;
                 document.body.appendChild(this.renderer.domElement);
 
-                // Iluminação aprimorada
-                this.scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-                this.scene.add(new THREE.HemisphereLight(0x00f2ff, 0x000000, 0.5));
+                this.scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+                this.scene.add(new THREE.HemisphereLight(0x00f2ff, 0x000000, 0.6));
                 
-                const sun = new THREE.DirectionalLight(0xffffff, 1.0);
-                sun.position.set(20, 50, 20);
+                const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+                sun.position.set(20, 100, 20);
                 this.scene.add(sun);
 
-                // Grid posicionado no mesmo nível do chão do mapa
-                const grid = new THREE.GridHelper(400, 80, 0x00f2ff, 0x111111);
-                grid.position.y = -1.6;
+                const grid = new THREE.GridHelper(500, 50, 0x00f2ff, 0x111111);
+                grid.position.y = -1.61;
                 this.scene.add(grid);
             }
 
@@ -151,18 +151,16 @@
                 this.world = new CANNON.World();
                 this.world.gravity.set(0, Config.physics.gravity, 0);
                 
-                // Chão físico invisível
                 const groundBody = new CANNON.Body({ mass: 0 });
                 groundBody.addShape(new CANNON.Plane());
                 groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1,0,0), -Math.PI/2);
                 groundBody.position.y = -1.6; 
                 this.world.addBody(groundBody);
 
-                // Spawn do player um pouco acima do chão
                 this.player.body = new CANNON.Body({ 
                     mass: 1.5, 
                     shape: new CANNON.Box(new CANNON.Vec3(0.5, 1.5, 0.4)), 
-                    position: new CANNON.Vec3(0, 5, 0), 
+                    position: new CANNON.Vec3(0, 8, 0), // Spawn alto para evitar prender no chão
                     fixedRotation: true 
                 });
                 this.world.addBody(this.player.body);
@@ -193,9 +191,8 @@
                 const joy = nipplejs.create({ zone: document.getElementById('joystick-zone'), mode: 'static', position: {left: '70px', bottom: '70px'}, color: '#00f2ff' });
                 joy.on('move', (e, d) => {
                     const moveAngle = d.angle.radian + this.camRotation.theta;
-                    const power = d.distance / 50;
-                    this.input.x = Math.cos(moveAngle) * Config.physics.walkSpeed * power;
-                    this.input.z = -Math.sin(moveAngle) * Config.physics.walkSpeed * power;
+                    this.input.x = Math.cos(moveAngle) * Config.physics.walkSpeed * (d.distance / 50);
+                    this.input.z = -Math.sin(moveAngle) * Config.physics.walkSpeed * (d.distance / 50);
                 });
                 joy.on('end', () => { this.input.x = 0; this.input.z = 0; });
 
@@ -213,8 +210,7 @@
                     const dx = e.touches[0].pageX - this.touchStart.x;
                     const dy = e.touches[0].pageY - this.touchStart.y;
                     this.camRotation.theta -= dx * 0.008;
-                    this.camRotation.phi += dy * 0.008;
-                    this.camRotation.phi = Math.max(0.1, Math.min(Math.PI / 2.2, this.camRotation.phi));
+                    this.camRotation.phi = Math.max(0.1, Math.min(1.4, this.camRotation.phi + dy * 0.008));
                     this.touchStart.x = e.touches[0].pageX; this.touchStart.y = e.touches[0].pageY;
                 });
             }
@@ -224,6 +220,8 @@
                     requestAnimationFrame(animate);
                     this.world.step(1/60);
                     this.player.mesh.position.copy(this.player.body.position);
+                    this.player.body.velocity.x = this.input.x;
+                    this.player.body.velocity.z = this.input.z;
 
                     const cx = this.player.mesh.position.x + this.camDistance * Math.sin(this.camRotation.theta) * Math.cos(this.camRotation.phi);
                     const cy = this.player.mesh.position.y + this.camDistance * Math.sin(this.camRotation.phi);
@@ -232,12 +230,9 @@
                     this.camera.lookAt(this.player.mesh.position.x, this.player.mesh.position.y + 1, this.player.mesh.position.z);
 
                     if(Math.abs(this.input.x) > 0.1 || Math.abs(this.input.z) > 0.1) {
-                        this.player.body.velocity.x = this.input.x;
-                        this.player.body.velocity.z = this.input.z;
                         this.player.mesh.rotation.y = this.lerpAngle(this.player.mesh.rotation.y, Math.atan2(this.input.x, this.input.z), 0.2);
                         this.animateWalking(this.player.mesh, true);
                     } else {
-                        this.player.body.velocity.x *= 0.8; this.player.body.velocity.z *= 0.8;
                         this.animateWalking(this.player.mesh, false);
                     }
 
