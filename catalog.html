@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Aurora Point | Catalog</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #E1E1E1; text-align: center; padding: 20px; }
+        .editor-container { background: white; padding: 20px; border-radius: 8px; border: 1px solid #AAA; max-width: 400px; margin: 0 auto; }
+        
+        /* Boneco R6 */
+        .r6-preview { margin: 20px 0; }
+        .r6-row { display: flex; justify-content: center; gap: 5px; margin-top: 5px; }
+        .part { background: #f1f10e; border: 1px solid #000; cursor: pointer; }
+        .head { width: 40px; height: 40px; margin: 0 auto; }
+        .torso { width: 80px; height: 100px; }
+        .arm, .leg { width: 38px; height: 100px; }
+
+        /* Paleta */
+        .palette { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 20px 0; }
+        .dot { width: 32px; height: 32px; border-radius: 50%; border: 2px solid #FFF; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        
+        .btn-save { background: #003366; color: white; border: none; padding: 15px; width: 100%; font-weight: bold; border-radius: 4px; cursor: pointer; }
+        .btn-back { background: none; border: none; color: #003366; text-decoration: underline; margin-top: 15px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div class="editor-container">
+        <img src="https://i.postimg.cc/jScG67Yr/Design-sem-nome(1).png" width="60">
+        <h3>Avatar Editor</h3>
+        
+        <div class="r6-preview">
+            <div id="body-head" class="part head" onclick="selectPart('body-head', 'Cabeça')"></div>
+            <div class="r6-row">
+                <div id="body-larm" class="part arm" onclick="selectPart('body-larm', 'Braço Esq')"></div>
+                <div id="body-torso" class="part torso" onclick="selectPart('body-torso', 'Torso')"></div>
+                <div id="body-rarm" class="part arm" onclick="selectPart('body-rarm', 'Braço Dir')"></div>
+            </div>
+            <div class="r6-row">
+                <div id="body-lleg" class="part leg" onclick="selectPart('body-lleg', 'Perna Esq')"></div>
+                <div id="body-rleg" class="part leg" onclick="selectPart('body-rleg', 'Perna Dir')"></div>
+            </div>
+        </div>
+
+        <p>A editar: <strong id="selected-name">Nenhuma parte</strong></p>
+        <div id="palette-box" class="palette"></div>
+        
+        <button class="btn-save" onclick="saveAvatar()">GUARDAR AVATAR</button>
+        <button class="btn-back" onclick="location.href='home.html'">Voltar para Home</button>
+    </div>
+
+    <script>
+        // TEU FIREBASE CONFIG (IGUAL AO DO INDEX)
+        const firebaseConfig = {
+            apiKey: "AIzaSyBvwC0_9DREMFIHFelYuc5RdfXz6bpo1JA",
+            authDomain: "aurorapoint-a8a1e.firebaseapp.com",
+            projectId: "aurorapoint-a8a1e",
+            storageBucket: "aurorapoint-a8a1e.firebasestorage.app",
+            messagingSenderId: "324340380415",
+            appId: "1:324340380415:web:468fcca5188b539682d2ca"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        let selectedId = null;
+        const colors = ['#f1f10e', '#ff0000', '#0000ff', '#00aa00', '#ffffff', '#1b1b1b', '#ff5500', '#a3a2a5', '#55aaff', '#7f3f00'];
+
+        // 1. CARREGAR AVATAR JÁ SALVO
+        firebase.auth().onAuthStateChanged(user => {
+            if (user) {
+                db.collection("users").doc(user.uid).get().then(doc => {
+                    if (doc.exists && doc.data().avatar) {
+                        const av = doc.data().avatar;
+                        Object.keys(av).forEach(id => {
+                            if(document.getElementById(id)) document.getElementById(id).style.backgroundColor = av[id];
+                        });
+                    }
+                });
+            } else {
+                window.location.href = 'index.html';
+            }
+        });
+
+        // 2. CRIAR PALETA
+        const palBox = document.getElementById('palette-box');
+        colors.forEach(c => {
+            const d = document.createElement('div');
+            d.className = 'dot';
+            d.style.backgroundColor = c;
+            d.onclick = () => {
+                if(selectedId) document.getElementById(selectedId).style.backgroundColor = c;
+            };
+            palBox.appendChild(d);
+        });
+
+        function selectPart(id, name) {
+            selectedId = id;
+            document.getElementById('selected-name').innerText = name;
+            document.querySelectorAll('.part').forEach(p => p.style.border = "1px solid #000");
+            document.getElementById(id).style.border = "2px solid #003366";
+        }
+
+        // 3. GUARDAR NO FIREBASE
+        function saveAvatar() {
+            const user = firebase.auth().currentUser;
+            if(!user) return;
+
+            let config = {};
+            document.querySelectorAll('.part').forEach(p => {
+                config[p.id] = p.style.backgroundColor || '#f1f10e';
+            });
+
+            db.collection("users").doc(user.uid).set({ avatar: config }, { merge: true })
+            .then(() => alert("✅ Avatar guardado no servidor!"));
+        }
+    </script>
+</body>
+</html>

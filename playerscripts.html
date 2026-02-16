@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Aurora Engine | In-Game</title>
+    <style>
+        /* CSS Crítico para evitar tela branca/preta */
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+
+        /* Tela de Pré-Carregamento */
+        #boot-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #001a33; color: white; display: flex;
+            flex-direction: column; justify-content: center; align-items: center;
+            z-index: 9999; font-family: sans-serif;
+        }
+
+        .start-button {
+            padding: 20px 50px; background: #00aa00; color: white;
+            border: none; border-radius: 8px; font-size: 1.5rem;
+            font-weight: bold; cursor: pointer; box-shadow: 0 4px #006600;
+        }
+        .start-button:active { transform: translateY(4px); box-shadow: none; }
+
+        /* Interface do Jogo */
+        #game-ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: none; }
+        .u-btn { pointer-events: auto; background: rgba(0,0,0,0.5); border: 1px solid #fff; color: white; padding: 10px; border-radius: 5px; }
+        
+        #joystick-wrapper { position: absolute; bottom: 40px; left: 40px; width: 120px; height: 120px; pointer-events: auto; }
+        #j-base { width: 100%; height: 100%; background: rgba(255,255,255,0.1); border: 2px solid #fff; border-radius: 50%; position: relative; }
+        #j-stick { width: 50px; height: 50px; background: #fff; border-radius: 50%; position: absolute; top: 35px; left: 35px; }
+        
+        #jump-btn { position: absolute; bottom: 50px; right: 50px; width: 80px; height: 80px; border-radius: 50%; background: rgba(255,255,255,0.2); border: 3px solid #fff; color: white; font-weight: bold; pointer-events: auto; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cannon@0.6.2/build/cannon.min.js"></script>
+</head>
+<body>
+
+    <div id="boot-screen">
+        <h1 id="status-text">AURORA ENGINE</h1>
+        <button class="start-button" onclick="launchGame()">JOGAR</button>
+    </div>
+
+    <div id="game-ui">
+        <div style="position: absolute; top: 20px; left: 20px;">
+            <button class="u-btn" onclick="location.href='index.html'">SAIR</button>
+        </div>
+        <div id="joystick-wrapper">
+            <div id="j-base"><div id="j-stick"></div></div>
+        </div>
+        <button id="jump-btn">PULAR</button>
+    </div>
+
+    <script>
+        let scene, camera, renderer, world, playerBody, playerGroup;
+        let moveX = 0, moveZ = 0;
+        let physicsObjects = [];
+
+        // Inicia o jogo após o clique do usuário
+        async function launchGame() {
+            document.getElementById('boot-screen').style.display = 'none';
+            document.getElementById('game-ui').style.display = 'block';
+
+            // Tentar Fullscreen e Landscape
+            try {
+                if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+                if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape');
+            } catch (e) { console.warn("Fullscreen/Rotação não suportada"); }
+
+            init();
+        }
+
+        function init() {
+            // 1. FÍSICA
+            world = new CANNON.World();
+            world.gravity.set(0, -20, 0);
+
+            // 2. TRÊS JS
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.body.appendChild(renderer.domElement);
+
+            // Luzes
+            const light = new THREE.DirectionalLight(0xffffff, 1);
+            light.position.set(5, 10, 5);
+            scene.add(light, new THREE.AmbientLight(0xffffff, 0.5));
+
+            // Chão
+            const groundShape = new CANNON.Plane();
+            const groundBody = new CANNON.Body({ mass: 0 });
+            groundBody.addShape(groundShape);
+            groundBody.quaternion.setFromAxisAngle(new CANNON.Vector3(1, 0, 0), -Math.PI / 2);
+            world.addBody(groundBody);
+
+            const groundMesh = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({ color: 0x44aa44 }));
+            groundMesh.rotation.x = -Math.PI / 2;
+            scene.add(groundMesh);
+
+            // 3. PLAYER (Carregar do Catalog)
+            createPlayer();
+
+            // 4. BLOCOS FÍSICOS (Empurráveis)
+            addBox(2, 2, 2, 8, 5, -10, 0xff0000, 2); // Bloco Vermelho
+            addBox(1, 1, 1, -5, 5, -5, 0x0000ff, 1); // Bloco Azul
+
+            setupControls();
+            animate();
+        }
+
+        function createPlayer() {
+            playerGroup = new THREE.Group();
+            const savedData = JSON.parse(localStorage.getItem('aurora_avatar_3d')) || {};
+            const faceTex = new THREE.TextureLoader().load('https://i.pinimg.com/736x/21/51/87/215187d5d718b5258957e8496bc1687c.jpg');
+
+            function createPart(w, h, d, x, y, z, color, hasFace = false) {
+                const mat = new THREE.MeshStandardMaterial({ color: color });
+                let mesh;
+                if (hasFace) {
+                    const faceMat = new THREE.MeshStandardMaterial({ map: faceTex });
+                    mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [mat, mat, mat, mat, faceMat, mat]);
+                } else {
+                    mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+                }
+                mesh.position.set(x, y, z);
+                playerGroup.add(mesh);
+            }
+
+            // Montagem R6
+            createPart(0.6, 0.6, 0.6, 0, 0.9, 0, savedData['body-head'] || '#f1f10e', true);
+            createPart(1.2, 1.2, 0.6, 0, 0, 0, savedData['body-torso'] || '#f1f10e');
+            createPart(0.5, 1.2, 0.5, -0.9, 0, 0, savedData['body-larm'] || '#f1f10e');
+            createPart(0.5, 1.2, 0.5, 0.9, 0, 0, savedData['body-rarm'] || '#f1f10e');
+            createPart(0.5, 1.1, 0.5, -0.35, -1.15, 0, savedData['body-lleg'] || '#f1f10e');
+            createPart(0.5, 1.1, 0.5, 0.35, -1.15, 0, savedData['body-rleg'] || '#f1f10e');
+
+            scene.add(playerGroup);
+
+            // Física do Player
+            const shape = new CANNON.Box(new CANNON.Vector3(0.6, 1.2, 0.3));
+            playerBody = new CANNON.Body({ mass: 1, fixedRotation: true });
+            playerBody.addShape(shape);
+            playerBody.position.set(0, 5, 0);
+            world.addBody(playerBody);
+        }
+
+        function addBox(w, h, d, x, y, z, color, mass) {
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color }));
+            scene.add(mesh);
+            const shape = new CANNON.Box(new CANNON.Vector3(w / 2, h / 2, d / 2));
+            const body = new CANNON.Body({ mass, shape });
+            body.position.set(x, y, z);
+            world.addBody(body);
+            physicsObjects.push({ mesh, body });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            world.step(1 / 60);
+
+            // Atualizar Player
+            playerGroup.position.copy(playerBody.position);
+            playerGroup.position.y -= 0.5;
+
+            if (Math.abs(moveX) > 0.05 || Math.abs(moveZ) > 0.05) {
+                playerBody.velocity.x = moveX * 12;
+                playerBody.velocity.z = moveZ * 12;
+                playerGroup.rotation.y = Math.atan2(moveX, moveZ);
+            } else {
+                playerBody.velocity.x = 0;
+                playerBody.velocity.z = 0;
+            }
+
+            // Atualizar Blocos
+            physicsObjects.forEach(obj => {
+                obj.mesh.position.copy(obj.body.position);
+                obj.mesh.quaternion.copy(obj.body.quaternion);
+            });
+
+            // Camera Suave
+            camera.position.lerp(new THREE.Vector3(playerGroup.position.x, playerGroup.position.y + 7, playerGroup.position.z + 10), 0.1);
+            camera.lookAt(playerGroup.position);
+
+            renderer.render(scene, camera);
+        }
+
+        function setupControls() {
+            const stick = document.getElementById('j-stick');
+            const zone = document.getElementById('joystick-wrapper');
+
+            zone.addEventListener('touchmove', (e) => {
+                const t = e.touches[0];
+                const rect = zone.getBoundingClientRect();
+                const dx = t.clientX - (rect.left + rect.width / 2);
+                const dy = t.clientY - (rect.top + rect.height / 2);
+                const dist = Math.min(Math.hypot(dx, dy), 40);
+                const angle = Math.atan2(dy, dx);
+
+                stick.style.transform = `translate(${Math.cos(angle) * dist}px, ${Math.sin(angle) * dist}px)`;
+                moveX = (Math.cos(angle) * dist) / 40;
+                moveZ = (Math.sin(angle) * dist) / 40;
+            });
+
+            zone.addEventListener('touchend', () => {
+                stick.style.transform = 'translate(0,0)';
+                moveX = 0; moveZ = 0;
+            });
+
+            document.getElementById('jump-btn').addEventListener('touchstart', () => {
+                if (Math.abs(playerBody.velocity.y) < 0.5) playerBody.velocity.y = 10;
+            });
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

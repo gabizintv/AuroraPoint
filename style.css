@@ -1,0 +1,33 @@
+* { margin: 0; padding: 0; box-sizing: border-box; font-family: sans-serif; }
+body { background: #E1E1E1; }
+.hidden { display: none !important; }
+
+/* Header & Nav */
+.top-bar { background: #003366; color: white; padding: 10px; display: flex; justify-content: space-between; align-items: center; }
+.main-logo { height: 25px; }
+.main-nav { background: #EEE; border-bottom: 1px solid #CCC; }
+.main-nav ul { list-style: none; display: flex; }
+.main-nav a { padding: 12px 20px; display: block; text-decoration: none; color: #003366; font-weight: bold; font-size: 14px; cursor: pointer; }
+.main-nav a.active { background: white; border-bottom: 3px solid #003366; }
+
+/* Grid de Games */
+.container { padding: 20px; }
+.game-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; }
+.game-card { background: white; border: 1px solid #AAA; padding: 5px; cursor: pointer; }
+.thumb-container img { width: 100%; border-radius: 2px; }
+.game-title { display: block; font-weight: bold; color: #003366; margin-top: 5px; font-size: 14px; }
+
+/* Avatar Editor */
+.avatar-editor-box { background: white; border: 1px solid #AAA; padding: 20px; border-radius: 4px; max-width: 400px; margin: 0 auto; }
+.r6-preview { margin-bottom: 20px; }
+.r6-middle, .r6-bottom { display: flex; justify-content: center; gap: 5px; margin-top: 5px; }
+.part { background: #f1f10e; border: 1px solid #000; cursor: pointer; transition: 0.2s; }
+.part:hover { opacity: 0.8; }
+.head { width: 40px; height: 40px; margin: 0 auto; }
+.torso { width: 80px; height: 100px; }
+.arm { width: 38px; height: 100px; }
+.leg { width: 38px; height: 100px; }
+
+.palette { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 20px 0; }
+.dot { width: 35px; height: 35px; border-radius: 50%; border: 2px solid #FFF; box-shadow: 0 0 5px rgba(0,0,0,0.2); cursor: pointer; }
+.save-btn { background: #008000; color: white; border: none; padding: 12px; width: 100%; font-weight: bold; border-radius: 4px; cursor: pointer; }

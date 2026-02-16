@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Aurora Point | Login</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; font-family: sans-serif; overflow: hidden; }
+        #auth-screen {
+            position: fixed; top:0; left:0; width:100%; height:100%;
+            background: url('https://agenciamarcospontes.com.br/wp-content/uploads/2020/03/turismo-aurora-boreal.jpg') no-repeat center center;
+            background-size: cover; display: flex; justify-content: center; align-items: center;
+        }
+        .login-box {
+            background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            padding: 30px; border-radius: 20px; width: 85%; max-width: 340px; text-align: center;
+            border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        h2 { color: white; margin-bottom: 20px; }
+        input { width: 100%; padding: 14px; margin: 10px 0; border-radius: 10px; border: none; box-sizing: border-box; font-size: 16px; }
+        button { width: 100%; padding: 14px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .btn-login { background: #003366; color: white; }
+        .btn-reg { background: #00aa00; color: white; }
+        #error-msg { color: #ff9999; font-size: 13px; margin-top: 10px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div id="auth-screen">
+        <div class="login-box">
+            <img src="https://i.postimg.cc/jScG67Yr/Design-sem-nome(1).png" width="70">
+            <h2>Aurora Point</h2>
+            <input type="text" id="username" placeholder="Nome de Usuário">
+            <input type="password" id="password" placeholder="Senha">
+            <button class="btn-login" onclick="login()">ENTRAR</button>
+            <button class="btn-reg" onclick="register()">CRIAR CONTA</button>
+            <p id="error-msg"></p>
+        </div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBvwC0_9DREMFIHFelYuc5RdfXz6bpo1JA",
+            authDomain: "aurorapoint-a8a1e.firebaseapp.com",
+            projectId: "aurorapoint-a8a1e",
+            storageBucket: "aurorapoint-a8a1e.firebasestorage.app",
+            messagingSenderId: "324340380415",
+            appId: "1:324340380415:web:468fcca5188b539682d2ca"
+        };
+        firebase.initializeApp(firebaseConfig);
+
+        function toEmail(user) { return user.trim().toLowerCase() + "@aurora.com"; }
+
+        function login() {
+            const user = document.getElementById('username').value;
+            const pass = document.getElementById('password').value;
+            firebase.auth().signInWithEmailAndPassword(toEmail(user), pass)
+                .then(() => window.location.href = 'home.html')
+                .catch(err => document.getElementById('error-msg').innerText = "Erro no Login.");
+        }
+
+        function register() {
+            const user = document.getElementById('username').value;
+            const pass = document.getElementById('password').value;
+            firebase.auth().createUserWithEmailAndPassword(toEmail(user), pass)
+                .then(cred => {
+                    // Após criar a conta, vai para a Home
+                    window.location.href = 'home.html';
+                })
+                .catch(err => document.getElementById('error-msg').innerText = "Nome já existe.");
+        }
+
+        // Se já estiver logado, pula direto para a home
+        firebase.auth().onAuthStateChanged(user => { if(user) window.location.href = 'home.html'; });
+    </script>
+</body>
+</html>

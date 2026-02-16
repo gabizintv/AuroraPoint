@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Aurora Point | Home</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background: #E1E1E1; color: #333; }
+
+        /* Topo Clássico Aurora */
+        .top-bar { 
+            background: #003366; 
+            color: white; 
+            padding: 12px 20px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            border-bottom: 4px solid #002244;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        .user-stats { font-size: 13px; font-weight: bold; text-align: right; }
+        .stat-line { color: #FFD700; font-size: 14px; } /* Cor dourada para pontos/tickets */
+
+        /* Container Principal */
+        .container { padding: 25px; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+        
+        /* Cards */
+        .card { 
+            background: white; border: 1px solid #CCC; padding: 15px; 
+            border-radius: 12px; width: 100%; max-width: 320px; 
+            text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+        }
+        .card:active { transform: scale(0.98); }
+        .card img { width: 100%; border-radius: 8px; margin-bottom: 12px; border: 1px solid #EEE; }
+        .card-title { display: block; font-weight: bold; margin-bottom: 8px; color: #003366; font-size: 20px; }
+        
+        /* Botões */
+        .btn-play { width: 100%; background: #008000; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 16px; box-shadow: 0 4px #005500; }
+        .btn-catalog { width: 100%; background: #003366; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 16px; box-shadow: 0 4px #001a33; }
+        
+        .btn-logout { background: none; border: none; color: #CC0000; font-size: 13px; cursor: pointer; margin-top: 30px; font-weight: bold; text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+    <header class="top-bar">
+        <img src="https://i.postimg.cc/jScG67Yr/Design-sem-nome(1).png" width="80">
+        <div class="user-stats">
+            <div id="display-name" style="font-size: 16px; margin-bottom: 4px;">Carregando...</div>
+            <div class="stat-line">🎟️ <span id="user-tickets">0</span> | ⭐ <span id="user-points">0</span></div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="card">
+            <img src="https://art.ngfiles.com/comments/739000/iu_739223_7577476.webp">
+            <span class="card-title">Classic Crossroads</span>
+            <button class="btn-play" onclick="location.href='playerscripts.html'">JOGAR</button>
+        </div>
+
+        <div class="card">
+            <span class="card-title">Meu Avatar</span>
+            <p style="font-size: 14px; margin-bottom: 15px; color: #666;">Personalize as cores do seu personagem R6.</p>
+            <button class="btn-catalog" onclick="location.href='catalog.html'">EDITAR AVATAR</button>
+        </div>
+
+        <button class="btn-logout" onclick="logout()">Sair da Conta</button>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBvwC0_9DREMFIHFelYuc5RdfXz6bpo1JA",
+            authDomain: "aurorapoint-a8a1e.firebaseapp.com",
+            projectId: "aurorapoint-a8a1e",
+            storageBucket: "aurorapoint-a8a1e.firebasestorage.app",
+            messagingSenderId: "324340380415",
+            appId: "1:324340380415:web:468fcca5188b539682d2ca"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        // Verificação de Login e Carregamento de Nome REAL
+        auth.onAuthStateChanged(user => {
+            if (!user) {
+                window.location.href = 'index.html';
+            } else {
+                // Tenta buscar no Banco de Dados o campo 'username'
+                db.collection("users").doc(user.uid).get().then(doc => {
+                    let nomeFinal = "";
+                    
+                    if (doc.exists && doc.data().username) {
+                        nomeFinal = doc.data().username;
+                        // Atualiza status se existirem
+                        document.getElementById('user-tickets').innerText = doc.data().tickets || 0;
+                        document.getElementById('user-points').innerText = doc.data().points || 0;
+                    } else {
+                        // Se não achar no banco, limpa o e-mail (ex: lucas@aurora.com vira Lucas)
+                        nomeFinal = user.email.split('@')[0];
+                        nomeFinal = nomeFinal.charAt(0).toUpperCase() + nomeFinal.slice(1);
+                    }
+                    
+                    document.getElementById('display-name').innerText = "Olá, " + nomeFinal;
+                }).catch(err => {
+                    console.error("Erro ao carregar dados:", err);
+                    document.getElementById('display-name').innerText = "Olá, Jogador";
+                });
+            }
+        });
+
+        function logout() {
+            auth.signOut().then(() => {
+                window.location.href = 'index.html';
+            });
+        }
+    </script>
+</body>
+</html>
